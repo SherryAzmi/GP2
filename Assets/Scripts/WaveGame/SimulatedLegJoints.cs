@@ -26,6 +26,8 @@ public class SimulatedLegJoints : MonoBehaviour
 
     [Tooltip("Random noise in degrees, to mimic real sensor jitter")]
     public float jitter = 0.5f;
+    [Tooltip("Standing patient: the thigh hangs down from the hip instead of lying on the seat")]
+    public bool standing;
 
     public float SimulatedAngle { get; private set; }
 
@@ -58,6 +60,13 @@ public class SimulatedLegJoints : MonoBehaviour
         float angle = SimulatedAngle + (jitter > 0f ? Random.Range(-jitter, jitter) : 0f);
         float rad = angle * Mathf.Deg2Rad;
         kneeJoint.localPosition = Vector3.zero;
+        if (standing)
+        {
+            // Standing: thigh points up, a straight shin hangs down, bending swings the heel back (+Z).
+            hipJoint.localPosition = new Vector3(0f, thighLength, 0f);
+            ankleJoint.localPosition = new Vector3(0f, -Mathf.Cos(rad), Mathf.Sin(rad)) * shinLength;
+            return;
+        }
         hipJoint.localPosition = new Vector3(0f, 0f, thighLength);
         ankleJoint.localPosition = new Vector3(0f, -Mathf.Sin(rad), -Mathf.Cos(rad)) * shinLength;
     }
