@@ -362,48 +362,14 @@ public class WaveGameManager : MonoBehaviour
     {
         audioSource = gameObject.AddComponent<AudioSource>();
         audioSource.playOnAwake = false;
-        clearClip = Tone("Cleared", new[] { 660f, 880f, 1320f }, 0.12f, 0.35f);
-        alertClip = Tone("SafetyAlert", new[] { 1000f, 0f, 1000f, 0f, 1000f }, 0.1f, 0.4f);
-        splashClip = Noise("Splash", 0.6f, 6f, 0.35f);
-        waveClip = Noise("WaveIn", 1.6f, 1.5f, 0.12f);
+        clearClip = GeneratedAudio.Tone("Cleared", new[] { 660f, 880f, 1320f }, 0.12f, 0.35f);
+        alertClip = GeneratedAudio.Tone("SafetyAlert", new[] { 1000f, 0f, 1000f, 0f, 1000f }, 0.1f, 0.4f);
+        splashClip = GeneratedAudio.Noise("Splash", 0.6f, 6f, 0.35f);
+        waveClip = GeneratedAudio.Noise("WaveIn", 1.6f, 1.5f, 0.12f);
     }
 
     void Play(AudioClip clip)
     {
         if (audioSource && clip) audioSource.PlayOneShot(clip);
-    }
-
-    static AudioClip Tone(string name, float[] notes, float noteSeconds, float volume)
-    {
-        const int rate = 44100;
-        int perNote = (int)(rate * noteSeconds);
-        var data = new float[perNote * notes.Length];
-        for (int n = 0; n < notes.Length; n++)
-            for (int i = 0; i < perNote; i++)
-            {
-                float env = Mathf.Min(1f, i / 400f) * (1f - (float)i / perNote);
-                data[n * perNote + i] = notes[n] > 0f ? Mathf.Sin(2f * Mathf.PI * notes[n] * i / rate) * env * volume : 0f;
-            }
-        var clip = AudioClip.Create(name, data.Length, 1, rate, false);
-        clip.SetData(data, 0);
-        return clip;
-    }
-
-    static AudioClip Noise(string name, float seconds, float decay, float volume)
-    {
-        const int rate = 44100;
-        var data = new float[(int)(rate * seconds)];
-        var rng = new System.Random(name.GetHashCode());
-        float smooth = 0f;
-        for (int i = 0; i < data.Length; i++)
-        {
-            float t = (float)i / data.Length;
-            float env = Mathf.Min(1f, t * 8f) * Mathf.Exp(-decay * t);
-            smooth = Mathf.Lerp(smooth, (float)rng.NextDouble() * 2f - 1f, 0.25f); // soft, wash-like noise
-            data[i] = smooth * env * volume;
-        }
-        var clip = AudioClip.Create(name, data.Length, 1, rate, false);
-        clip.SetData(data, 0);
-        return clip;
     }
 }
