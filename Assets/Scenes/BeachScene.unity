@@ -2630,6 +2630,7 @@ GameObject:
   m_Component:
   - component: {fileID: 428754261}
   - component: {fileID: 428754260}
+  - component: {fileID: 428754262}
   m_Layer: 0
   m_Name: WaveGame
   m_TagString: Untagged
@@ -2651,13 +2652,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::WaveGameManager
   patientId: P001
   operatedLeg: 1
-  comfortableMaxAngle: 90
+  useDoctorPanel: 1
+  minTargetAngle: 30
+  maxTargetAngle: 90
   safetyCeilingAngle: 110
   wavesPerSession: 10
-  startTargetPercent: 0.5
-  minTargetPercent: 0.35
-  maxTargetPercent: 0.9
-  targetPercentStep: 0.05
+  startTargetLevel: 0.3
+  targetLevelStep: 0.15
   startHoldSeconds: 2
   maxHoldSeconds: 4
   holdSecondsStep: 0.25
@@ -2696,6 +2697,110 @@ Transform:
   - {fileID: 2085454959}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &428754262
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 428754259}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bea7fa862ea09b447a529bb983dd8f46, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BeachLife
+  ambience: {fileID: 8300000, guid: f7694948622bfaa48b852e5bdbc54ddd, type: 3}
+  birds: {fileID: 8300000, guid: c1ff3d9d8ebe4f4438bfb4893e1ad81e, type: 3}
+  crowd: {fileID: 8300000, guid: 1ec2abf42164d0e40bf496fe77aad428, type: 3}
+  ambienceVolume: 0.35
+  birdsVolume: 0.4
+  crowdVolume: 0.6
+  personPrefabs: []
+  spots:
+  - activity: 0
+    position: {x: -5, y: 0, z: -3.2}
+    walkTo: {x: 0, y: 0, z: 0}
+    yaw: 90
+    size: 1
+    speed: 1
+  - activity: 0
+    position: {x: -2.4, y: 0, z: -3.2}
+    walkTo: {x: 0, y: 0, z: 0}
+    yaw: -90
+    size: 1
+    speed: 1
+  - activity: 1
+    position: {x: -14, y: 0, z: -6}
+    walkTo: {x: 14, y: 0, z: -6}
+    yaw: 0
+    size: 1
+    speed: 0.9
+  - activity: 1
+    position: {x: 16, y: 0, z: -8}
+    walkTo: {x: -10, y: 0, z: -8}
+    yaw: 0
+    size: 1
+    speed: 0.7
+  - activity: 2
+    position: {x: 3.8, y: 0, z: -3.6}
+    walkTo: {x: 0, y: 0, z: 0}
+    yaw: 180
+    size: 0.6
+    speed: 1
+  - activity: 2
+    position: {x: 5.1, y: 0, z: -4}
+    walkTo: {x: 0, y: 0, z: 0}
+    yaw: 160
+    size: 0.6
+    speed: 2
+  - activity: 3
+    position: {x: 7, y: 0, z: -5.5}
+    walkTo: {x: 0, y: 0, z: 0}
+    yaw: 200
+    size: 1
+    speed: 1
+  - activity: 5
+    position: {x: -3.1, y: 0, z: -0.8}
+    walkTo: {x: 0, y: 0, z: 0}
+    yaw: 180
+    size: 1
+    speed: 1
+  - activity: 6
+    position: {x: -2.1, y: 0, z: -0.7}
+    walkTo: {x: 0, y: 0, z: 0}
+    yaw: 180
+    size: 0.6
+    speed: 1
+  - activity: 5
+    position: {x: 3, y: 0, z: -0.8}
+    walkTo: {x: 0, y: 0, z: 0}
+    yaw: 170
+    size: 1
+    speed: 1
+  - activity: 6
+    position: {x: 3.9, y: 0, z: -0.7}
+    walkTo: {x: 0, y: 0, z: 0}
+    yaw: 190
+    size: 0.55
+    speed: 3
+  - activity: 4
+    position: {x: 9.5, y: 0, z: 1.5}
+    walkTo: {x: 0, y: 0, z: 0}
+    yaw: 20
+    size: 1
+    speed: 1
+  - activity: 4
+    position: {x: 11, y: 0, z: 0.6}
+    walkTo: {x: 0, y: 0, z: 0}
+    yaw: -15
+    size: 1
+    speed: 1
+  feetSandHeight: 0.072
+  beachSlope: 0.08
+  feetZ: -0.25
+  materialSource: {fileID: 661764813}
+  sandColor: {r: 0.92, g: 0.8, b: 0.55, a: 1}
+  seed: 7
 --- !u!1 &463073830
 GameObject:
   m_ObjectHideFlags: 0
@@ -3729,6 +3834,11 @@ Transform:
   m_Children: []
   m_Father: {fileID: 224961553}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!23 &661764813 stripped
+MeshRenderer:
+  m_CorrespondingSourceObject: {fileID: -6871335749799197761, guid: 682bbe6d429cfba42ae2ebb1669fa158, type: 3}
+  m_PrefabInstance: {fileID: 1448354950}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &665749952
 GameObject:
   m_ObjectHideFlags: 0
