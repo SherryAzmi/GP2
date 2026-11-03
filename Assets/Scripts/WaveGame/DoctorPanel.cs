@@ -26,6 +26,49 @@ public class DoctorPanel : MonoBehaviour
     static readonly Color Off = new Color(1f, 1f, 1f, 0.15f);
     static readonly Color On = new Color(0.25f, 0.65f, 1f, 1f);
 
+    const float WorldScale = 0.0014f; // metres per UI pixel when the panel floats in the scene
+
+    bool inPatientView;
+
+    /// <summary>
+    /// Screen overlay (therapist's monitor) or, with <paramref name="patientView"/>, a world-space canvas
+    /// floating in front of the patient so the panel is part of what the headset camera sees.
+    /// </summary>
+    internal static void ConfigureCanvas(GameObject root, bool patientView, int sortingOrder)
+    {
+        var canvas = root.GetComponent<Canvas>();
+        var scaler = root.GetComponent<CanvasScaler>();
+        canvas.sortingOrder = sortingOrder;
+        if (patientView)
+        {
+            canvas.renderMode = RenderMode.WorldSpace;
+            scaler.enabled = false;
+            var rt = (RectTransform)root.transform;
+            rt.sizeDelta = new Vector2(1920f, 1080f);
+            rt.localScale = Vector3.one * WorldScale;
+            return;
+        }
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.matchWidthOrHeight = 0.5f;
+    }
+
+    /// <summary>Puts a world-space panel straight ahead of the patient, facing them, and lets the mouse click it.</summary>
+    internal static void PlaceInFront(GameObject root, float distance)
+    {
+        var canvas = root.GetComponent<Canvas>();
+        if (canvas.renderMode != RenderMode.WorldSpace) return;
+        var cam = Camera.main;
+        if (!cam) return;
+        canvas.worldCamera = cam;
+        Vector3 forward = cam.transform.forward;
+        forward.y = 0f;
+        forward = forward.sqrMagnitude < 0.01f ? Vector3.forward : forward.normalized;
+        // A little below eye level, so the umbrella canopy above the chair does not cut off the top of the panel.
+        root.transform.SetPositionAndRotation(cam.transform.position + forward * distance + Vector3.down * 0.25f, Quaternion.LookRotation(forward));
+    }
+
     public static DoctorPanel Create(WaveGameManager game)
     {
         if (!FindFirstObjectByType<EventSystem>())
@@ -37,6 +80,7 @@ public class DoctorPanel : MonoBehaviour
         go.transform.SetParent(game.transform, false);
         var panel = go.AddComponent<DoctorPanel>();
         panel.game = game;
+        panel.inPatientView = game.panelsInPatientView;
         panel.Build();
         return panel;
     }
@@ -52,6 +96,7 @@ public class DoctorPanel : MonoBehaviour
         SetLeg(game.legMode);
         hintText.text = $"Safety limit is {game.safetyCeilingAngle:0}°. Targets are kept at least 5° below it.";
         errorText.text = "";
+        PlaceInFront(root, 1.3f);
         root.SetActive(true);
     }
 
@@ -107,16 +152,12 @@ public class DoctorPanel : MonoBehaviour
     {
         root = new GameObject("Root", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
         root.transform.SetParent(transform, false);
-        var canvas = root.GetComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 100;
-        var scaler = root.GetComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920f, 1080f);
-        scaler.matchWidthOrHeight = 0.5f;
+        ConfigureCanvas(root, inPatientView, 100);
 
         var rt = (RectTransform)root.transform;
-        Stretch(Child("Dim", rt, Dim));
+        var dim = Child("Dim", rt, Dim);
+        Stretch(dim);
+        if (inPatientView) dim.gameObject.SetActive(false); // keep the beach visible around the card
 
         var card = Child("Card", rt, new Color(0.08f, 0.2f, 0.34f, 1f));
         card.anchorMin = card.anchorMax = card.pivot = new Vector2(0.5f, 0.5f);

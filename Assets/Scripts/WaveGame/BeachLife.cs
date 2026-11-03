@@ -78,6 +78,9 @@ public class BeachLife : MonoBehaviour
         public Vector3 home;
         public float phase;
         public float hipHeight = 0.72f;
+        // Catch game: where the hands aim and how strongly (0 = arms hang, 1 = fully on the ball).
+        public Vector3 handTarget;
+        public float handWeight;
     }
 
     class Castle { public Transform mound; public float phase; }
@@ -132,9 +135,9 @@ public class BeachLife : MonoBehaviour
     void Update()
     {
         float t = Time.time;
+        UpdateBall();
         foreach (var p in people) Animate(p, t);
         foreach (var c in castles) GrowCastle(c, t);
-        UpdateBall();
         foreach (var g in gulls)
         {
             float a = t * g.speed + g.phase;
@@ -191,7 +194,7 @@ public class BeachLife : MonoBehaviour
         p.model = model;
 
         if (personPrefabs != null && personPrefabs.Length > 0)
-            BuildFromPrefab(p, personPrefabs[rng.Next(personPrefabs.Length)]);
+            BuildFromPrefab(p, PickPrefab(s, rng));
         else
             BuildPlaceholder(p, rng);
 
@@ -199,6 +202,16 @@ public class BeachLife : MonoBehaviour
         if (s.activity == Activity.BuildCastle) BuildCastle(p, rng);
         people.Add(p);
         return p;
+    }
+
+    /// <summary>Children (spot size under 0.8) get prefabs named "Kid*", adults the rest; falls back to any prefab.</summary>
+    GameObject PickPrefab(Spot s, System.Random rng)
+    {
+        bool child = s.size < 0.8f;
+        var matching = new List<GameObject>();
+        foreach (var pf in personPrefabs)
+            if (pf && pf.name.StartsWith("Kid") == child) matching.Add(pf);
+        return matching.Count > 0 ? matching[rng.Next(matching.Count)] : personPrefabs[rng.Next(personPrefabs.Length)];
     }
 
     void BuildFromPrefab(Person p, GameObject prefab)
@@ -260,8 +273,7 @@ public class BeachLife : MonoBehaviour
             case Activity.Throw:
                 if (p.procedural)
                 {
-                    var arms = Quaternion.Euler(-100f - Mathf.Sin(t * 3f + p.phase * 3f) * 25f, 0, 0);
-                    Rot(p.armL, arms); Rot(p.armR, arms);
+                    AimArm(p, p.armL); AimArm(p, p.armR);
                 }
                 break;
             case Activity.Splash:
@@ -374,12 +386,45 @@ public class BeachLife : MonoBehaviour
         ballT += Time.deltaTime * 0.45f;
         float leg = Mathf.Repeat(ballT, 1f);
         bool toB = Mathf.Repeat(ballT, 2f) < 1f;
-        Vector3 from = (toB ? throwerA : throwerB).home + Vector3.up * 1.3f;
-        Vector3 to = (toB ? throwerB : throwerA).home + Vector3.up * 1.3f;
-        Vector3 pos = Vector3.Lerp(from, to, leg);
-        pos.y += Mathf.Sin(leg * Mathf.PI) * 1.4f;
+        Person thrower = toB ? throwerA : throwerB, catcher = toB ? throwerB : throwerA;
+
+        // One leg: the thrower winds up with the ball in both hands and lets go at `release`; the ball
+        // flies; the catcher reaches for it, takes it at `catchAt` and holds it until their own wind-up.
+        const float release = 0.3f, catchAt = 0.8f;
+        Vector3 pos;
+        if (leg < release)
+            pos = Vector3.Lerp(HoldPoint(thrower), WindupPoint(thrower), Mathf.SmoothStep(0f, 1f, leg / release));
+        else if (leg < catchAt)
+        {
+            float k = (leg - release) / (catchAt - release);
+            pos = Vector3.Lerp(WindupPoint(thrower), HoldPoint(catcher), k);
+            pos.y += Mathf.Sin(k * Mathf.PI) * 0.8f;
+        }
+        else
+            pos = HoldPoint(catcher);
         ball.position = pos;
         ball.Rotate(Vector3.right, 240f * Time.deltaTime);
+
+        // Hands follow the ball: the thrower lets go after the release, the catcher reaches as it nears.
+        thrower.handTarget = pos;
+        thrower.handWeight = 1f - Mathf.SmoothStep(0f, 1f, (leg - release) / 0.25f);
+        catcher.handTarget = pos;
+        catcher.handWeight = Mathf.SmoothStep(0f, 1f, (leg - 0.35f) / (catchAt - 0.35f));
+    }
+
+    Vector3 HoldPoint(Person p) => p.root.TransformPoint(0f, 1.2f, 0.68f);
+    Vector3 WindupPoint(Person p) => p.root.TransformPoint(0f, 1.95f, 0.3f);
+
+    /// <summary>Points a hanging arm (pivot at the shoulder) at the side of the ball nearest to it.</summary>
+    void AimArm(Person p, Transform arm)
+    {
+        if (!arm) return;
+        float side = Mathf.Sign(arm.localPosition.x);
+        Vector3 target = p.handTarget + p.root.right * side * 0.13f;
+        Vector3 dir = arm.parent.InverseTransformPoint(target) - arm.localPosition;
+        if (dir.sqrMagnitude < 1e-6f) return;
+        Quaternion aim = Quaternion.FromToRotation(Vector3.down, dir.normalized);
+        arm.localRotation = Quaternion.Slerp(Quaternion.identity, aim, p.handWeight);
     }
 
     // ---------------- Helpers ----------------

@@ -255,6 +255,7 @@ MonoBehaviour:
   minAngle: 0
   maxAngle: 140
   jitter: 0.5
+  standing: 0
 --- !u!1 &28711067
 GameObject:
   m_ObjectHideFlags: 0
@@ -2652,7 +2653,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::WaveGameManager
   patientId: P001
   operatedLeg: 1
+  legMode: 1
   useDoctorPanel: 1
+  panelsInPatientView: 0
   minTargetAngle: 30
   maxTargetAngle: 90
   safetyCeilingAngle: 110
@@ -2668,6 +2671,7 @@ MonoBehaviour:
   resultSeconds: 1.5
   retreatSeconds: 2
   restSeconds: 2.5
+  introSeconds: 10
   angleSource: {fileID: 24611622}
   leftLeg: {fileID: 294058919}
   rightLeg: {fileID: 649403687}
@@ -2715,7 +2719,15 @@ MonoBehaviour:
   ambienceVolume: 0.35
   birdsVolume: 0.4
   crowdVolume: 0.6
-  personPrefabs: []
+  personPrefabs:
+  - {fileID: 2301917503794211274, guid: 16543fbf630340e418f8cbd3abc4b75b, type: 3}
+  - {fileID: 7081258937814868314, guid: cd9dee3353b65054ca52e153d8a5d52b, type: 3}
+  - {fileID: 6366495273151179649, guid: 88ad6ddac579e804197a0817772f8edc, type: 3}
+  - {fileID: 7745439358442123188, guid: af783fa0fa71e9a4195391f68699d6d3, type: 3}
+  - {fileID: 5507512830178458083, guid: 0a9851151805a5e4083c42214068380e, type: 3}
+  - {fileID: 3405994492895629081, guid: 7d4bba5ac10c0f64d8c6d222d62c7762, type: 3}
+  - {fileID: 3469352812916947363, guid: a0321bab9133f2543a612299020f2b62, type: 3}
+  - {fileID: 4281867545765957499, guid: 3c6c0e4bb34d4f741b109d2bfe8b3bf6, type: 3}
   spots:
   - activity: 0
     position: {x: -5, y: 0, z: -3.2}
@@ -7114,7 +7126,7 @@ MonoBehaviour:
   requestBodyTrackingPermissionOnStartup: 0
   requestFaceTrackingPermissionOnStartup: 0
   requestEyeTrackingPermissionOnStartup: 0
-  requestScenePermissionOnStartup: 0
+  requestScenePermissionOnStartup: 1
   requestRecordAudioPermissionOnStartup: 0
   requestPassthroughCameraAccessPermissionOnStartup: 0
   _localDimming: 1

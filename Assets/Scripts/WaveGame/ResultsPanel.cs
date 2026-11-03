@@ -32,10 +32,13 @@ public class ResultsPanel : MonoBehaviour
     static readonly Color StageColor = new Color(1f, 1f, 1f, 0.08f);
     static readonly Color Muted = new Color(1f, 1f, 1f, 0.65f);
 
-    public static ResultsPanel Create()
+    bool inPatientView;
+
+    public static ResultsPanel Create(bool patientView)
     {
         var go = new GameObject("ResultsPanel");
         var panel = go.AddComponent<ResultsPanel>();
+        panel.inPatientView = patientView;
         panel.Build();
         return panel;
     }
@@ -60,6 +63,7 @@ public class ResultsPanel : MonoBehaviour
         subText.text = $"Patient: {patient}   ·   {System.DateTime.Now:d MMM yyyy, HH:mm}   ·   target range {minTarget:0}°–{maxTarget:0}°";
         ShowResultsView();
         IsOpen = true;
+        DoctorPanel.PlaceInFront(root, 1.8f);
         root.SetActive(true);
     }
 
@@ -210,17 +214,12 @@ public class ResultsPanel : MonoBehaviour
     {
         root = new GameObject("Root", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
         root.transform.SetParent(transform, false);
-        var canvas = root.GetComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 110;
-        var scaler = root.GetComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920f, 1080f);
-        scaler.matchWidthOrHeight = 0.5f;
+        DoctorPanel.ConfigureCanvas(root, inPatientView, 110);
 
         var rt = (RectTransform)root.transform;
         var dim = DoctorPanel.Child("Dim", rt, Dim);
         dim.anchorMin = Vector2.zero; dim.anchorMax = Vector2.one; dim.offsetMin = dim.offsetMax = Vector2.zero;
+        if (inPatientView) dim.gameObject.SetActive(false);
 
         card = DoctorPanel.Child("Card", rt, CardColor);
         card.anchorMin = card.anchorMax = card.pivot = new Vector2(0.5f, 0.5f);

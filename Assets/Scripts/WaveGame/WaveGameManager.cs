@@ -23,6 +23,9 @@ public class WaveGameManager : MonoBehaviour
     public LegMode legMode = LegMode.Right;
     [Tooltip("Show the therapist setup panel before each session")]
     public bool useDoctorPanel = true;
+    [Tooltip("ON: the setup and results panels float in the beach scene in front of the patient (for recording a video). " +
+             "OFF: they are screen overlays on the therapist's monitor only")]
+    public bool panelsInPatientView = false;
     [Tooltip("Easiest target for this patient, in degrees")]
     public float minTargetAngle = 30f;
     [Tooltip("Hardest target for this patient (their comfortable maximum), in degrees")]
@@ -114,7 +117,7 @@ public class WaveGameManager : MonoBehaviour
         if (useDoctorPanel)
         {
             panel = DoctorPanel.Create(this);
-            resultsPanel = ResultsPanel.Create();
+            resultsPanel = ResultsPanel.Create(panelsInPatientView);
         }
 
         while (true)
@@ -185,9 +188,12 @@ public class WaveGameManager : MonoBehaviour
             hud.SetStatus("Therapist is setting up\nthe session...", WaveHUD.Neutral);
             hud.SetInfo("");
             panel.Show();
+            // A panel floating in the scene would overlap the patient HUD, so hide the HUD meanwhile.
+            if (panelsInPatientView) hud.gameObject.SetActive(false);
             // The panel's Start button is the only way to begin (Space would type into its fields).
             while (!startRequested) yield return null;
             startRequested = false;
+            hud.gameObject.SetActive(true);
             yield break;
         }
         hud.SetStatus("Press  A  or  Space  to start", WaveHUD.Neutral);
@@ -230,7 +236,9 @@ public class WaveGameManager : MonoBehaviour
         if (resultsPanel)
         {
             resultsPanel.Show(patientId, results, minTargetAngle, maxTargetAngle, board, entry, rank);
+            if (panelsInPatientView) hud.gameObject.SetActive(false);
             while (resultsPanel.IsOpen) yield return null;
+            hud.gameObject.SetActive(true);
         }
         else yield return new WaitForSeconds(3f);
     }
