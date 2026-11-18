@@ -37,7 +37,8 @@ public class JointAngleCalculator : MonoBehaviour
         else
         {
             // Frame-rate independent exponential smoothing.
-            float k = 1f - Mathf.Pow(smoothing, Time.deltaTime * 30f);
+            // No smoothing means the newest angle as is (Pow(0, 0) would otherwise freeze it on a zero-time frame).
+            float k = smoothing <= 0f ? 1f : 1f - Mathf.Pow(smoothing, Time.deltaTime * 30f);
             CurrentKneeAngle = Mathf.Lerp(CurrentKneeAngle, RawKneeAngle, k);
         }
     }

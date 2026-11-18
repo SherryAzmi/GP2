@@ -56,6 +56,8 @@ public class WaveGameManager : MonoBehaviour
 
     [Header("Scene references")]
     public JointAngleCalculator angleSource;
+    [Tooltip("Camera knee sensor; until it sends readings the simulator moves the leg")]
+    public CameraPoseJoints cameraSensor;
     public VirtualLegPose leftLeg;
     public VirtualLegPose rightLeg;
     public WaveHUD hud;
@@ -99,6 +101,7 @@ public class WaveGameManager : MonoBehaviour
 
     VirtualLegPose OperatedLeg => operatedLeg == Leg.Left ? leftLeg : rightLeg;
     float Angle => angleSource ? angleSource.CurrentKneeAngle : 0f;
+    bool SensorLost => cameraSensor && cameraSensor.TrackingLost;
 
     IEnumerator Start()
     {
@@ -145,6 +148,7 @@ public class WaveGameManager : MonoBehaviour
     {
         if (leftLeg) leftLeg.angleSource = operatedLeg == Leg.Left ? leftSource : null;
         if (rightLeg) rightLeg.angleSource = operatedLeg == Leg.Right ? rightSource : null;
+        if (cameraSensor) cameraSensor.useLeftLeg = operatedLeg == Leg.Left;
     }
 
     void SwitchToLeg(Leg leg)
@@ -169,7 +173,8 @@ public class WaveGameManager : MonoBehaviour
             if (sessionRunning) safetyAlerts++;
         }
         aboveCeiling = over;
-        hud.SetWarning(over ? "Too far! Ease your knee back gently" : null);
+        hud.SetWarning(over ? "Too far! Ease your knee back gently"
+                     : SensorLost ? "The camera can't see your leg" : null);
     }
 
     void LateUpdate() => RippleWave();
@@ -348,8 +353,9 @@ public class WaveGameManager : MonoBehaviour
         {
             float angle = Angle;
             bool overLimit = angle > safetyCeilingAngle;
-            // Going past the safety limit never counts as holding.
-            bool holding = angle >= target - angleTolerance && !overLimit;
+            // Going past the safety limit never counts as holding, and neither does a frozen angle while the
+            // camera has lost the leg.
+            bool holding = angle >= target - angleTolerance && !overLimit && !SensorLost;
             if (holding) heldTime += Time.deltaTime;
             minAngle = Mathf.Min(minAngle, angle);
             maxAngle = Mathf.Max(maxAngle, angle);

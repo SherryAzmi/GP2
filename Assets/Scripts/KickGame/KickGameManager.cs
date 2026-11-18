@@ -54,6 +54,8 @@ public class KickGameManager : MonoBehaviour
 
     [Header("Scene references")]
     public JointAngleCalculator angleSource;
+    [Tooltip("Camera knee sensor; until it sends readings the simulator moves the leg")]
+    public CameraPoseJoints cameraSensor;
     public WaveHUD hud;
     [Tooltip("Headset camera (CenterEyeAnchor)")]
     public Transform head;
@@ -86,12 +88,14 @@ public class KickGameManager : MonoBehaviour
     KickLogger logger;
 
     float Angle => angleSource ? angleSource.CurrentKneeAngle : 0f;
+    bool SensorLost => cameraSensor && cameraSensor.TrackingLost;
 
     IEnumerator Start()
     {
         ballHome = ball.position;
         ballHomeRotation = ball.rotation;
         flash = new float[targets.Length];
+        if (cameraSensor) cameraSensor.useLeftLeg = operatedLeg == Leg.Left;
         block = new MaterialPropertyBlock();
         SetupAudio();
 
@@ -126,7 +130,8 @@ public class KickGameManager : MonoBehaviour
             balancePauses++;
         }
         hud.SetWarning(over ? "Too far! Ease your knee back gently"
-                     : leaning ? "Stand steady - step back to your spot" : null);
+                     : leaning ? "Stand steady - step back to your spot"
+                     : SensorLost ? "The camera can't see your leg" : null);
 
         UpdateTargetGlow();
     }
@@ -204,11 +209,11 @@ public class KickGameManager : MonoBehaviour
         {
             float angle = Angle;
             maxFlexion = Mathf.Max(maxFlexion, angle);
-            if (leaning)
+            if (leaning || SensorLost)
             {
                 held = 0f;
                 hud.SetHold(-1f);
-                hud.SetStatus("Stand steady first", WaveHUD.Bad);
+                hud.SetStatus(SensorLost ? "Waiting for the camera" : "Stand steady first", WaveHUD.Bad);
                 yield return null;
                 continue;
             }
