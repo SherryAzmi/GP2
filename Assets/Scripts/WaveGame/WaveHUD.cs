@@ -72,12 +72,13 @@ public class WaveHUD : MonoBehaviour
     }
 
     /// <param name="target">Target angle, or a negative value to hide the marker.</param>
-    public void SetAngle(float angle, float target, float ceiling)
+    /// <param name="straighten">The target is reached by coming down to it (extension) rather than up to it.</param>
+    public void SetAngle(float angle, float target, float ceiling, bool straighten = false)
     {
-        angleText.text = target >= 0f
-            ? $"Knee  {angle:0}°   /   target  {target:0}°"
-            : $"Knee  {angle:0}°";
-        bool onTarget = target >= 0f && angle >= target && angle <= ceiling;
+        angleText.text = target < 0f ? $"Knee  {angle:0}°"
+                       : straighten ? $"Knee  {angle:0}°   /   straighten to  {target:0}°"
+                       : $"Knee  {angle:0}°   /   target  {target:0}°";
+        bool onTarget = target >= 0f && angle <= ceiling && (straighten ? angle <= target : angle >= target);
         angleText.color = onTarget ? Good : Neutral;
         gaugeFillImage.color = angle > ceiling ? Bad : onTarget ? Good : new Color(0.4f, 0.75f, 1f);
 

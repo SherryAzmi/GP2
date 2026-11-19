@@ -14,7 +14,8 @@ public class SessionLogger : IDisposable
     StreamWriter writer;
 
     const string Header = "session_id,patient_id,operated_leg,wave,time_utc,target_percent,target_deg,hold_s," +
-                          "min_angle_in_hold,max_angle_in_hold,held_fraction,cleared,points,total_score,session_max_angle,safety_alerts";
+                          "min_angle_in_hold,max_angle_in_hold,held_fraction,cleared,points,total_score,session_max_angle,safety_alerts," +
+                          "movement";
 
     readonly string sessionId;
     readonly string patientId;
@@ -37,7 +38,7 @@ public class SessionLogger : IDisposable
 
     public void LogWave(int wave, float targetPercent, float targetDeg, float holdSeconds,
                         float minAngle, float maxAngle, float heldFraction, bool cleared,
-                        int points, int totalScore, float sessionMaxAngle, int safetyAlerts)
+                        int points, int totalScore, float sessionMaxAngle, int safetyAlerts, string movement)
     {
         if (writer == null) return;
         var c = CultureInfo.InvariantCulture;
@@ -47,7 +48,7 @@ public class SessionLogger : IDisposable
             targetPercent.ToString("F2", c), targetDeg.ToString("F1", c), holdSeconds.ToString("F2", c),
             minAngle.ToString("F1", c), maxAngle.ToString("F1", c), heldFraction.ToString("F2", c),
             cleared ? "1" : "0", points.ToString(c), totalScore.ToString(c),
-            sessionMaxAngle.ToString("F1", c), safetyAlerts.ToString(c)));
+            sessionMaxAngle.ToString("F1", c), safetyAlerts.ToString(c), movement));
         writer.Flush();
     }
 

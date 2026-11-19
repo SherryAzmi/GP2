@@ -6,8 +6,9 @@ using UnityEngine.UI;
 
 /// <summary>
 /// Therapist setup screen shown before every session (mouse + keyboard, flat screen).
-/// The therapist enters the patient's name, the operated leg and that patient's own target range
-/// (min and max knee angle) plus how many targets (waves) to run and the hold times, then presses Start.
+/// The therapist enters the patient's name, the operated leg, the movement (bend, straighten or both in turn),
+/// that patient's own target ranges for bending and straightening, how many targets (waves) to run and the hold
+/// times, then presses Start.
 /// Builds itself at runtime, so the scene only needs the WaveGameManager.
 /// </summary>
 public class DoctorPanel : MonoBehaviour
@@ -16,10 +17,11 @@ public class DoctorPanel : MonoBehaviour
 
     WaveGameManager game;
     GameObject root;
-    InputField nameField, minField, maxField, wavesField, holdField, maxHoldField;
-    Image leftButton, rightButton, bothButton;
+    InputField nameField, minField, maxField, straightEasyField, straightHardField, wavesField, holdField, maxHoldField;
+    Image leftButton, rightButton, bothButton, bendButton, straightenButton, alternateButton;
     Text hintText, errorText, legNote;
     WaveGameManager.LegMode legMode;
+    WaveGameManager.Movement movement;
 
     static readonly Color Dim = new Color(0.04f, 0.12f, 0.22f, 0.92f);
     static readonly Color Field = new Color(1f, 1f, 1f, 0.12f);
@@ -90,11 +92,15 @@ public class DoctorPanel : MonoBehaviour
         nameField.text = game.patientId;
         minField.text = game.minTargetAngle.ToString("0.#", CultureInfo.InvariantCulture);
         maxField.text = game.maxTargetAngle.ToString("0.#", CultureInfo.InvariantCulture);
+        straightEasyField.text = game.straightenEasiestAngle.ToString("0.#", CultureInfo.InvariantCulture);
+        straightHardField.text = game.straightenHardestAngle.ToString("0.#", CultureInfo.InvariantCulture);
         wavesField.text = game.wavesPerSession.ToString(CultureInfo.InvariantCulture);
         holdField.text = game.startHoldSeconds.ToString("0.#", CultureInfo.InvariantCulture);
         maxHoldField.text = game.maxHoldSeconds.ToString("0.#", CultureInfo.InvariantCulture);
         SetLeg(game.legMode);
-        hintText.text = $"Safety limit is {game.safetyCeilingAngle:0}°. Targets are kept at least 5° below it.";
+        SetMovement(game.movement);
+        hintText.text = $"Bend: the knee must bend to the target or more.  Straighten: it must straighten to the target or less.\n" +
+                        $"Safety limit is {game.safetyCeilingAngle:0}°; bend targets are kept at least 5° below it.";
         errorText.text = "";
         PlaceInFront(root, 1.3f);
         root.SetActive(true);
@@ -106,15 +112,19 @@ public class DoctorPanel : MonoBehaviour
     {
         var c = CultureInfo.InvariantCulture;
         float min = ParseFloat(minField.text), max = ParseFloat(maxField.text);
+        float straightEasy = ParseFloat(straightEasyField.text), straightHard = ParseFloat(straightHardField.text);
         float hold = ParseFloat(holdField.text), maxHold = ParseFloat(maxHoldField.text);
         int.TryParse(wavesField.text, NumberStyles.Integer, c, out int waves);
         float top = game.safetyCeilingAngle - 5f;
 
         string error = null;
         if (string.IsNullOrWhiteSpace(nameField.text)) error = "Enter the patient's name.";
-        else if (min < 5f) error = "Minimum angle must be at least 5°.";
-        else if (max <= min) error = "Maximum angle must be greater than the minimum.";
-        else if (max > top) error = $"Maximum angle can't be above {top:0}° (safety limit).";
+        else if (min < 5f) error = "Bend: easiest angle must be at least 5°.";
+        else if (max <= min) error = "Bend: hardest angle must be greater than the easiest.";
+        else if (max > top) error = $"Bend: hardest angle can't be above {top:0}° (safety limit).";
+        else if (straightHard < 0f) error = "Straighten: hardest angle can't be below 0° (a straight leg).";
+        else if (straightEasy <= straightHard) error = "Straighten: easiest angle must be greater than the hardest.";
+        else if (straightEasy > top) error = $"Straighten: easiest angle can't be above {top:0}°.";
         else if (waves < 1 || waves > 50) error = "Number of targets must be between 1 and 50.";
         else if (hold < 0.5f) error = "Hold time must be at least 0.5 s.";
         else if (maxHold < hold) error = "Max hold time must be at least the starting hold time.";
@@ -125,7 +135,7 @@ public class DoctorPanel : MonoBehaviour
             return;
         }
 
-        game.ApplyDoctorSettings(nameField.text.Trim(), legMode, min, max, waves, hold, maxHold);
+        game.ApplyDoctorSettings(nameField.text.Trim(), legMode, movement, min, max, straightEasy, straightHard, waves, hold, maxHold);
         Hide();
         game.RequestStart();
     }
@@ -138,6 +148,14 @@ public class DoctorPanel : MonoBehaviour
         bothButton.color = legMode == WaveGameManager.LegMode.Both ? On : Off;
         legNote.text = legMode == WaveGameManager.LegMode.Both
             ? "Both: right leg first, then the left. The patient is told which leg is next." : "";
+    }
+
+    void SetMovement(WaveGameManager.Movement value)
+    {
+        movement = value;
+        bendButton.color = movement == WaveGameManager.Movement.Bend ? On : Off;
+        straightenButton.color = movement == WaveGameManager.Movement.Straighten ? On : Off;
+        alternateButton.color = movement == WaveGameManager.Movement.Alternate ? On : Off;
     }
 
     static float ParseFloat(string s)
@@ -161,9 +179,9 @@ public class DoctorPanel : MonoBehaviour
 
         var card = Child("Card", rt, new Color(0.08f, 0.2f, 0.34f, 1f));
         card.anchorMin = card.anchorMax = card.pivot = new Vector2(0.5f, 0.5f);
-        card.sizeDelta = new Vector2(PanelW, 940f);
+        card.sizeDelta = new Vector2(PanelW, 1050f);
 
-        float y = 410f;
+        float y = 465f;
         Label(card, "Therapist setup", new Vector2(0, y), new Vector2(PanelW - 40f, 60f), 44, TextAnchor.MiddleCenter, Color.white);
         y -= 80f;
 
@@ -177,14 +195,23 @@ public class DoctorPanel : MonoBehaviour
         legNote = Label(card, "", new Vector2(0, y), new Vector2(PanelW - 60f, 40f), 20, TextAnchor.MiddleCenter, new Color(1f, 1f, 1f, 0.7f));
         y -= RowH - 14f;
 
-        minField = Row(card, "Min target angle (°)", ref y, InputField.ContentType.DecimalNumber);
-        maxField = Row(card, "Max target angle (°)", ref y, InputField.ContentType.DecimalNumber);
+        Label(card, "Movement", new Vector2(-250f, y), new Vector2(240f, 50f), 28, TextAnchor.MiddleLeft, Color.white);
+        bendButton = ToggleButton(card, "Bend", new Vector2(-40f, y), () => SetMovement(WaveGameManager.Movement.Bend));
+        straightenButton = ToggleButton(card, "Straighten", new Vector2(100f, y), () => SetMovement(WaveGameManager.Movement.Straighten));
+        alternateButton = ToggleButton(card, "Alternate", new Vector2(240f, y), () => SetMovement(WaveGameManager.Movement.Alternate));
+        y -= RowH;
+
+        minField = Row(card, "Bend: easiest (°)", ref y, InputField.ContentType.DecimalNumber);
+        maxField = Row(card, "Bend: hardest (°)", ref y, InputField.ContentType.DecimalNumber);
+        straightEasyField = Row(card, "Straighten: easiest (°)", ref y, InputField.ContentType.DecimalNumber);
+        straightHardField = Row(card, "Straighten: hardest (°)", ref y, InputField.ContentType.DecimalNumber);
         wavesField = Row(card, "Number of targets", ref y, InputField.ContentType.IntegerNumber);
         holdField = Row(card, "Starting hold (s)", ref y, InputField.ContentType.DecimalNumber);
         maxHoldField = Row(card, "Max hold (s)", ref y, InputField.ContentType.DecimalNumber);
 
-        hintText = Label(card, "", new Vector2(0, y), new Vector2(PanelW - 60f, 60f), 22, TextAnchor.MiddleCenter, new Color(1f, 1f, 1f, 0.7f));
-        y -= 60f;
+        y -= 6f;
+        hintText = Label(card, "", new Vector2(0, y), new Vector2(PanelW - 40f, 80f), 20, TextAnchor.MiddleCenter, new Color(1f, 1f, 1f, 0.7f));
+        y -= 66f;
         errorText = Label(card, "", new Vector2(0, y), new Vector2(PanelW - 60f, 50f), 26, TextAnchor.MiddleCenter, WaveHUD.Bad);
         y -= 80f;
 
@@ -216,7 +243,7 @@ public class DoctorPanel : MonoBehaviour
 
     Image ToggleButton(RectTransform parent, string label, Vector2 pos, UnityEngine.Events.UnityAction onClick)
     {
-        var rt = Child("Leg_" + label, parent, Off);
+        var rt = Child("Toggle_" + label, parent, Off);
         rt.anchoredPosition = pos;
         rt.sizeDelta = new Vector2(130f, 52f);
         var btn = rt.gameObject.AddComponent<Button>();
