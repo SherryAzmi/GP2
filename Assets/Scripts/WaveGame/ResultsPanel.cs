@@ -235,12 +235,23 @@ public class ResultsPanel : MonoBehaviour
         dim.anchorMin = Vector2.zero; dim.anchorMax = Vector2.one; dim.offsetMin = dim.offsetMax = Vector2.zero;
         if (inPatientView) dim.gameObject.SetActive(false);
 
-        card = DoctorPanel.Child("Card", rt, CardColor);
+        // Same look as the setup panel: sand trim, ocean card, coloured header.
+        var pal = UIStyle.For(UIStyle.Theme.Sea);
+        var edge = DoctorPanel.Child("Edge", rt, pal.edge);
+        edge.sizeDelta = new Vector2(CardW + 14f, CardH + 14f);
+        UIStyle.Round(edge.GetComponent<Image>(), 1f);
+        card = DoctorPanel.Child("Card", rt, pal.panel);
         card.anchorMin = card.anchorMax = card.pivot = new Vector2(0.5f, 0.5f);
         card.sizeDelta = new Vector2(CardW, CardH);
+        UIStyle.Round(card.GetComponent<Image>(), 1f);
+        var header = DoctorPanel.Child("Header", card, pal.header);
+        header.anchoredPosition = new Vector2(0, CardH / 2f - 76f);
+        header.sizeDelta = new Vector2(CardW - 28f, 128f);
+        UIStyle.Round(header.GetComponent<Image>(), 0.8f);
 
-        DoctorPanel.Label(card, "Session results", new Vector2(0, 390f), new Vector2(CardW - 80f, 70f), 54, TextAnchor.MiddleCenter, Color.white);
-        subText = DoctorPanel.Label(card, "", new Vector2(0, 335f), new Vector2(CardW - 80f, 40f), 26, TextAnchor.MiddleCenter, Muted);
+        DoctorPanel.Label(card, "Session results", new Vector2(0, 390f), new Vector2(CardW - 80f, 70f), 54, TextAnchor.MiddleCenter, Color.white)
+            .fontStyle = FontStyle.Bold;
+        subText = DoctorPanel.Label(card, "", new Vector2(0, 335f), new Vector2(CardW - 80f, 40f), 26, TextAnchor.MiddleCenter, new Color(1f, 1f, 1f, 0.8f));
         ratingText = DoctorPanel.Label(card, "", new Vector2(0, 270f), new Vector2(CardW - 80f, 60f), 40, TextAnchor.MiddleCenter, WaveHUD.Good);
 
         body = DoctorPanel.Child("Body", card, Color.clear);
@@ -256,6 +267,7 @@ public class ResultsPanel : MonoBehaviour
         var toggleBtn = toggle.gameObject.AddComponent<Button>();
         toggleBtn.targetGraphic = toggle.GetComponent<Image>();
         toggleBtn.onClick.AddListener(ToggleView);
+        UISound.Attach(toggleBtn, true);
         toggleLabel = DoctorPanel.Label(toggle, "VIEW LEADERBOARD", Vector2.zero, new Vector2(380f, 70f), 28, TextAnchor.MiddleCenter, Color.white);
 
         var button = DoctorPanel.Child("NewSession", card, new Color(0.2f, 0.75f, 0.4f, 1f));
@@ -264,6 +276,7 @@ public class ResultsPanel : MonoBehaviour
         var btn = button.gameObject.AddComponent<Button>();
         btn.targetGraphic = button.GetComponent<Image>();
         btn.onClick.AddListener(Close);
+        UISound.Attach(btn);
         DoctorPanel.Label(button, "NEW SESSION", Vector2.zero, new Vector2(360f, 70f), 34, TextAnchor.MiddleCenter, Color.white);
 
         root.SetActive(false);

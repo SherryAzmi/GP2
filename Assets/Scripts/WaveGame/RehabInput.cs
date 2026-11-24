@@ -11,10 +11,27 @@ public static class RehabInput
 {
     static InputAction start;
     static InputAction stick;
+    static InputAction menu;
+
+    /// <summary>Back to the start menu: Esc on the keyboard, the menu button on the left controller.</summary>
+    public static bool MenuPressed
+    {
+        get
+        {
+            Init();
+            return menu.WasPressedThisFrame();
+        }
+    }
 
     static void Init()
     {
         if (start != null) return;
+
+        menu = new InputAction("Menu", InputActionType.Button);
+        menu.AddBinding("<Keyboard>/escape");
+        menu.AddBinding("<XRController>{LeftHand}/menu");
+        menu.AddBinding("<Gamepad>/select");
+        menu.Enable();
 
         start = new InputAction("Start", InputActionType.Button);
         start.AddBinding("<XRController>{RightHand}/primaryButton"); // A

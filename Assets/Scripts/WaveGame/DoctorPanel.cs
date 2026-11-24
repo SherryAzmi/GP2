@@ -19,14 +19,15 @@ public class DoctorPanel : MonoBehaviour
     GameObject root;
     InputField nameField, minField, maxField, straightEasyField, straightHardField, wavesField, holdField, maxHoldField;
     Image leftButton, rightButton, bothButton, bendButton, straightenButton, alternateButton;
-    Text hintText, errorText, legNote;
+    Text hintText, errorText, legNote, subtitleText;
+    const string DefaultSubtitle = "BEACH WAVES   ·   knee rehabilitation session";
     WaveGameManager.LegMode legMode;
     WaveGameManager.Movement movement;
 
     static readonly Color Dim = new Color(0.04f, 0.12f, 0.22f, 0.92f);
-    static readonly Color Field = new Color(1f, 1f, 1f, 0.12f);
-    static readonly Color Off = new Color(1f, 1f, 1f, 0.15f);
-    static readonly Color On = new Color(0.25f, 0.65f, 1f, 1f);
+    static readonly Color FieldColor = new Color(0.01f, 0.06f, 0.12f, 1f);
+    static readonly Color Off = new Color(0.09f, 0.22f, 0.35f, 1f);
+    static readonly Color On = new Color(0.16f, 0.6f, 0.95f, 1f);
 
     const float WorldScale = 0.0014f; // metres per UI pixel when the panel floats in the scene
 
@@ -87,7 +88,8 @@ public class DoctorPanel : MonoBehaviour
         return panel;
     }
 
-    public void Show()
+    /// <param name="subtitle">Line under the title, e.g. the patient and stage chosen in the start menu.</param>
+    public void Show(string subtitle = null)
     {
         nameField.text = game.patientId;
         minField.text = game.minTargetAngle.ToString("0.#", CultureInfo.InvariantCulture);
@@ -102,6 +104,7 @@ public class DoctorPanel : MonoBehaviour
         hintText.text = $"Bend: the knee must bend to the target or more.  Straighten: it must straighten to the target or less.\n" +
                         $"Safety limit is {game.safetyCeilingAngle:0}°; bend targets are kept at least 5° below it.";
         errorText.text = "";
+        subtitleText.text = subtitle ?? DefaultSubtitle;
         PlaceInFront(root, 1.3f);
         root.SetActive(true);
     }
@@ -132,8 +135,10 @@ public class DoctorPanel : MonoBehaviour
         if (error != null)
         {
             errorText.text = error;
+            UISound.Error();
             return;
         }
+        UISound.Confirm();
 
         game.ApplyDoctorSettings(nameField.text.Trim(), legMode, movement, min, max, straightEasy, straightHard, waves, hold, maxHold);
         Hide();
@@ -143,19 +148,28 @@ public class DoctorPanel : MonoBehaviour
     void SetLeg(WaveGameManager.LegMode value)
     {
         legMode = value;
-        leftButton.color = legMode == WaveGameManager.LegMode.Left ? On : Off;
-        rightButton.color = legMode == WaveGameManager.LegMode.Right ? On : Off;
-        bothButton.color = legMode == WaveGameManager.LegMode.Both ? On : Off;
+        Paint(leftButton, legMode == WaveGameManager.LegMode.Left);
+        Paint(rightButton, legMode == WaveGameManager.LegMode.Right);
+        Paint(bothButton, legMode == WaveGameManager.LegMode.Both);
         legNote.text = legMode == WaveGameManager.LegMode.Both
-            ? "Both: right leg first, then the left. The patient is told which leg is next." : "";
+            ? "Right leg first, then the left. The patient is told which leg is next." : "";
     }
 
     void SetMovement(WaveGameManager.Movement value)
     {
         movement = value;
-        bendButton.color = movement == WaveGameManager.Movement.Bend ? On : Off;
-        straightenButton.color = movement == WaveGameManager.Movement.Straighten ? On : Off;
-        alternateButton.color = movement == WaveGameManager.Movement.Alternate ? On : Off;
+        Paint(bendButton, movement == WaveGameManager.Movement.Bend);
+        Paint(straightenButton, movement == WaveGameManager.Movement.Straighten);
+        Paint(alternateButton, movement == WaveGameManager.Movement.Alternate);
+    }
+
+    /// <summary>Selected option: solid sea-blue pill with bold white text; otherwise a faint pill with muted text.</summary>
+    static void Paint(Image pill, bool on)
+    {
+        pill.color = on ? On : Off;
+        var text = pill.GetComponentInChildren<Text>();
+        text.fontStyle = on ? FontStyle.Bold : FontStyle.Normal;
+        text.color = on ? Color.white : Muted;
     }
 
     static float ParseFloat(string s)
@@ -166,8 +180,11 @@ public class DoctorPanel : MonoBehaviour
 
     // ---------------- UI construction ----------------
 
+    const float CardW = 1240f, CardH = 880f, ColW = 570f;
+
     void Build()
     {
+        var pal = UIStyle.For(UIStyle.Theme.Sea);
         root = new GameObject("Root", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
         root.transform.SetParent(transform, false);
         ConfigureCanvas(root, inPatientView, 100);
@@ -177,87 +194,173 @@ public class DoctorPanel : MonoBehaviour
         Stretch(dim);
         if (inPatientView) dim.gameObject.SetActive(false); // keep the beach visible around the card
 
-        var card = Child("Card", rt, new Color(0.08f, 0.2f, 0.34f, 1f));
-        card.anchorMin = card.anchorMax = card.pivot = new Vector2(0.5f, 0.5f);
-        card.sizeDelta = new Vector2(PanelW, 1050f);
+        // Card with a sand-coloured trim, like the patient HUD.
+        var edge = Child("Edge", rt, pal.edge);
+        edge.sizeDelta = new Vector2(CardW + 14f, CardH + 14f);
+        UIStyle.Round(edge.GetComponent<Image>(), 1f);
+        var card = Child("Card", rt, pal.panel);
+        card.sizeDelta = new Vector2(CardW, CardH);
+        UIStyle.Round(card.GetComponent<Image>(), 1f);
 
-        float y = 465f;
-        Label(card, "Therapist setup", new Vector2(0, y), new Vector2(PanelW - 40f, 60f), 44, TextAnchor.MiddleCenter, Color.white);
-        y -= 80f;
+        // Header
+        var header = Child("Header", card, pal.header);
+        header.anchoredPosition = new Vector2(0, CardH / 2f - 68f);
+        header.sizeDelta = new Vector2(CardW - 28f, 112f);
+        UIStyle.Round(header.GetComponent<Image>(), 0.8f);
+        var title = Label(header, "Therapist setup", new Vector2(0, 16f), new Vector2(CardW - 80f, 60f), 50, TextAnchor.MiddleCenter, Color.white);
+        title.fontStyle = FontStyle.Bold;
+        subtitleText = Label(header, DefaultSubtitle, new Vector2(0, -32f), new Vector2(CardW - 300f, 34f), 24,
+              TextAnchor.MiddleCenter, new Color(1f, 1f, 1f, 0.8f));
 
-        nameField = Row(card, "Patient name", ref y, InputField.ContentType.Standard);
+        // Back to the start menu (only when the menu is part of the build).
+        if (Application.CanStreamedLevelBeLoaded(SessionConfig.MenuScene))
+        {
+            var back = Child("Menu", header, new Color(0f, 0f, 0f, 0.3f));
+            back.anchoredPosition = new Vector2(-(CardW - 28f) / 2f + 90f, 0f);
+            back.sizeDelta = new Vector2(140f, 56f);
+            UIStyle.Round(back.GetComponent<Image>(), 1.2f);
+            var bb = back.gameObject.AddComponent<Button>();
+            bb.targetGraphic = back.GetComponent<Image>();
+            Tint(bb);
+            bb.onClick.AddListener(SessionConfig.ReturnToMenu);
+            UISound.Attach(bb);
+            var bt = Label(back, "< MENU", Vector2.zero, new Vector2(140f, 56f), 24, TextAnchor.MiddleCenter, Color.white);
+            bt.fontStyle = FontStyle.Bold;
+        }
 
-        Label(card, "Leg to train", new Vector2(-250f, y), new Vector2(240f, 50f), 28, TextAnchor.MiddleLeft, Color.white);
-        leftButton = ToggleButton(card, "Left", new Vector2(-40f, y), () => SetLeg(WaveGameManager.LegMode.Left));
-        rightButton = ToggleButton(card, "Right", new Vector2(100f, y), () => SetLeg(WaveGameManager.LegMode.Right));
-        bothButton = ToggleButton(card, "Both", new Vector2(240f, y), () => SetLeg(WaveGameManager.LegMode.Both));
-        y -= RowH - 4f;
-        legNote = Label(card, "", new Vector2(0, y), new Vector2(PanelW - 60f, 40f), 20, TextAnchor.MiddleCenter, new Color(1f, 1f, 1f, 0.7f));
-        y -= RowH - 14f;
+        float lx = -(ColW / 2f + 15f), rx = ColW / 2f + 15f;
 
-        Label(card, "Movement", new Vector2(-250f, y), new Vector2(240f, 50f), 28, TextAnchor.MiddleLeft, Color.white);
-        bendButton = ToggleButton(card, "Bend", new Vector2(-40f, y), () => SetMovement(WaveGameManager.Movement.Bend));
-        straightenButton = ToggleButton(card, "Straighten", new Vector2(100f, y), () => SetMovement(WaveGameManager.Movement.Straighten));
-        alternateButton = ToggleButton(card, "Alternate", new Vector2(240f, y), () => SetMovement(WaveGameManager.Movement.Alternate));
-        y -= RowH;
+        // ---- Left column ----
+        var patient = Section(card, "PATIENT", new Vector2(lx, 165f), new Vector2(ColW, 250f));
+        Label(patient, "Patient name", new Vector2(-150f, 40f), new Vector2(220f, 50f), 28, TextAnchor.MiddleLeft, Color.white);
+        nameField = Field(patient, new Vector2(115f, 40f), 300f, InputField.ContentType.Standard, TextAnchor.MiddleLeft);
+        Label(patient, "Leg to train", new Vector2(-150f, -35f), new Vector2(220f, 50f), 28, TextAnchor.MiddleLeft, Color.white);
+        leftButton = ToggleButton(patient, "Left", new Vector2(15f, -35f), 94f, () => SetLeg(WaveGameManager.LegMode.Left));
+        rightButton = ToggleButton(patient, "Right", new Vector2(115f, -35f), 94f, () => SetLeg(WaveGameManager.LegMode.Right));
+        bothButton = ToggleButton(patient, "Both", new Vector2(215f, -35f), 94f, () => SetLeg(WaveGameManager.LegMode.Both));
+        legNote = Label(patient, "", new Vector2(0, -92f), new Vector2(ColW - 40f, 34f), 20, TextAnchor.MiddleCenter, Muted);
 
-        minField = Row(card, "Bend: easiest (°)", ref y, InputField.ContentType.DecimalNumber);
-        maxField = Row(card, "Bend: hardest (°)", ref y, InputField.ContentType.DecimalNumber);
-        straightEasyField = Row(card, "Straighten: easiest (°)", ref y, InputField.ContentType.DecimalNumber);
-        straightHardField = Row(card, "Straighten: hardest (°)", ref y, InputField.ContentType.DecimalNumber);
-        wavesField = Row(card, "Number of targets", ref y, InputField.ContentType.IntegerNumber);
-        holdField = Row(card, "Starting hold (s)", ref y, InputField.ContentType.DecimalNumber);
-        maxHoldField = Row(card, "Max hold (s)", ref y, InputField.ContentType.DecimalNumber);
+        var move = Section(card, "MOVEMENT", new Vector2(lx, -125f), new Vector2(ColW, 290f));
+        bendButton = ToggleButton(move, "Bend", new Vector2(-180f, 60f), 166f, () => SetMovement(WaveGameManager.Movement.Bend));
+        straightenButton = ToggleButton(move, "Straighten", new Vector2(0f, 60f), 166f, () => SetMovement(WaveGameManager.Movement.Straighten));
+        alternateButton = ToggleButton(move, "Alternate", new Vector2(180f, 60f), 166f, () => SetMovement(WaveGameManager.Movement.Alternate));
+        hintText = Label(move, "", new Vector2(0, -45f), new Vector2(ColW - 50f, 140f), 21, TextAnchor.MiddleCenter, Muted);
+        hintText.horizontalOverflow = HorizontalWrapMode.Wrap;
 
-        y -= 6f;
-        hintText = Label(card, "", new Vector2(0, y), new Vector2(PanelW - 40f, 80f), 20, TextAnchor.MiddleCenter, new Color(1f, 1f, 1f, 0.7f));
-        y -= 66f;
-        errorText = Label(card, "", new Vector2(0, y), new Vector2(PanelW - 60f, 50f), 26, TextAnchor.MiddleCenter, WaveHUD.Bad);
-        y -= 80f;
+        // ---- Right column ----
+        var bend = Section(card, "BEND TARGETS  (°)", new Vector2(rx, 215f), new Vector2(ColW, 150f));
+        minField = LabelledField(bend, "Easiest", new Vector2(-135f, -18f), 230f, InputField.ContentType.DecimalNumber);
+        maxField = LabelledField(bend, "Hardest", new Vector2(135f, -18f), 230f, InputField.ContentType.DecimalNumber);
+
+        var straight = Section(card, "STRAIGHTEN TARGETS  (°)", new Vector2(rx, 50f), new Vector2(ColW, 150f));
+        straightEasyField = LabelledField(straight, "Easiest", new Vector2(-135f, -18f), 230f, InputField.ContentType.DecimalNumber);
+        straightHardField = LabelledField(straight, "Hardest", new Vector2(135f, -18f), 230f, InputField.ContentType.DecimalNumber);
+
+        var session = Section(card, "SESSION", new Vector2(rx, -130f), new Vector2(ColW, 180f));
+        wavesField = LabelledField(session, "Waves", new Vector2(-180f, -25f), 160f, InputField.ContentType.IntegerNumber);
+        holdField = LabelledField(session, "Start hold (s)", new Vector2(0f, -25f), 160f, InputField.ContentType.DecimalNumber);
+        maxHoldField = LabelledField(session, "Max hold (s)", new Vector2(180f, -25f), 160f, InputField.ContentType.DecimalNumber);
+
+        // ---- Footer ----
+        errorText = Label(card, "", new Vector2(0, -300f), new Vector2(CardW - 80f, 40f), 26, TextAnchor.MiddleCenter, WaveHUD.Bad);
+        errorText.fontStyle = FontStyle.Bold;
 
         var start = Child("Start", card, new Color(0.2f, 0.75f, 0.4f, 1f));
-        start.anchoredPosition = new Vector2(0, y);
-        start.sizeDelta = new Vector2(320f, 80f);
+        start.anchoredPosition = new Vector2(0, -370f);
+        start.sizeDelta = new Vector2(440f, 86f);
+        UIStyle.Round(start.GetComponent<Image>(), 1.6f);
         var btn = start.gameObject.AddComponent<Button>();
         btn.targetGraphic = start.GetComponent<Image>();
+        Tint(btn);
         btn.onClick.AddListener(OnStartClicked);
-        Label(start, "START", Vector2.zero, new Vector2(320f, 80f), 40, TextAnchor.MiddleCenter, Color.white);
+        var startText = Label(start, "START SESSION", Vector2.zero, new Vector2(440f, 86f), 40, TextAnchor.MiddleCenter, Color.white);
+        startText.fontStyle = FontStyle.Bold;
+        startText.gameObject.AddComponent<Shadow>().effectColor = new Color(0f, 0f, 0f, 0.35f);
     }
 
-    InputField Row(RectTransform parent, string label, ref float y, InputField.ContentType type)
-    {
-        Label(parent, label, new Vector2(-170f, y), new Vector2(380f, 50f), 28, TextAnchor.MiddleLeft, Color.white);
-        var box = Child("Field_" + label, parent, Field);
-        box.anchoredPosition = new Vector2(190f, y);
-        box.sizeDelta = new Vector2(280f, 52f);
+    static readonly Color Muted = new Color(1f, 1f, 1f, 0.7f);
 
-        var text = Label(box, "", Vector2.zero, new Vector2(260f, 52f), 28, TextAnchor.MiddleLeft, Color.white);
+    /// <summary>A softly filled group box with a small accent title in its top-left corner.</summary>
+    static RectTransform Section(RectTransform parent, string title, Vector2 center, Vector2 size)
+    {
+        var box = Child("Section_" + title, parent, new Color(0.04f, 0.18f, 0.3f, 1f));
+        box.anchoredPosition = center;
+        box.sizeDelta = size;
+        var t = Label(box, title, new Vector2(-size.x / 2f + 20f + 200f, size.y / 2f - 24f), new Vector2(400f, 32f), 22,
+                      TextAnchor.MiddleLeft, WaveHUD.Accent);
+        t.fontStyle = FontStyle.Bold;
+        return box;
+    }
+
+    InputField LabelledField(RectTransform parent, string label, Vector2 pos, float width, InputField.ContentType type)
+    {
+        Label(parent, label, pos + new Vector2(0f, 45f), new Vector2(width, 30f), 22, TextAnchor.MiddleCenter, Muted);
+        return Field(parent, pos, width, type, TextAnchor.MiddleCenter);
+    }
+
+    /// <summary>Dark rounded input box with a faint outline; the outline lights up while editing.</summary>
+    InputField Field(RectTransform parent, Vector2 pos, float width, InputField.ContentType type, TextAnchor align)
+    {
+        var box = Child("Field", parent, FieldColor);
+        box.anchoredPosition = pos;
+        box.sizeDelta = new Vector2(width, 54f);
+        var outline = box.gameObject.AddComponent<Outline>();
+        outline.effectColor = new Color(1f, 1f, 1f, 0.22f);
+        outline.effectDistance = new Vector2(2f, -2f);
+
+        var text = Label(box, "", Vector2.zero, new Vector2(width - 28f, 54f), 30, align, Color.white);
+        text.fontStyle = FontStyle.Bold;
         text.supportRichText = false;
         var input = box.gameObject.AddComponent<InputField>();
         input.targetGraphic = box.GetComponent<Image>();
         input.textComponent = text;
         input.contentType = type;
-        y -= RowH;
+        input.selectionColor = new Color(0.25f, 0.65f, 1f, 0.5f);
+        input.caretColor = WaveHUD.Accent;
+        input.customCaretColor = true;
+        input.caretWidth = 3;
+        var colors = input.colors;
+        colors.highlightedColor = new Color(1.25f, 1.25f, 1.25f, 1f);
+        colors.selectedColor = new Color(1.5f, 1.5f, 1.6f, 1f);
+        input.colors = colors;
         return input;
     }
 
-    Image ToggleButton(RectTransform parent, string label, Vector2 pos, UnityEngine.Events.UnityAction onClick)
+    Image ToggleButton(RectTransform parent, string label, Vector2 pos, float width, UnityEngine.Events.UnityAction onClick)
     {
         var rt = Child("Toggle_" + label, parent, Off);
         rt.anchoredPosition = pos;
-        rt.sizeDelta = new Vector2(130f, 52f);
+        rt.sizeDelta = new Vector2(width, 52f);
+        UIStyle.Round(rt.GetComponent<Image>(), 1.1f);
         var btn = rt.gameObject.AddComponent<Button>();
         btn.targetGraphic = rt.GetComponent<Image>();
+        Tint(btn);
         btn.onClick.AddListener(onClick);
-        Label(rt, label, Vector2.zero, new Vector2(130f, 52f), 28, TextAnchor.MiddleCenter, Color.white);
+        UISound.Attach(btn, true);
+        Label(rt, label, Vector2.zero, new Vector2(width, 52f), 26, TextAnchor.MiddleCenter, Muted);
         return rt.GetComponent<Image>();
+    }
+
+    /// <summary>Hover brightens, press darkens.</summary>
+    static void Tint(Button b)
+    {
+        var c = b.colors;
+        c.highlightedColor = new Color(1.2f, 1.2f, 1.2f, 1f);
+        c.pressedColor = new Color(0.75f, 0.75f, 0.75f, 1f);
+        c.selectedColor = Color.white;
+        c.colorMultiplier = 1.3f;
+        c.fadeDuration = 0.08f;
+        b.colors = c;
     }
 
     internal static RectTransform Child(string name, RectTransform parent, Color color)
     {
         var rt = new GameObject(name, typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
         rt.SetParent(parent, false);
-        rt.GetComponent<Image>().color = color;
+        var img = rt.GetComponent<Image>();
+        img.color = color;
+        // Rounded corners everywhere except full-screen dims (those are stretched later and stay square at the edges).
+        if (name != "Dim") UIStyle.Round(img, 0.6f);
         return rt;
     }
 

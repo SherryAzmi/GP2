@@ -73,7 +73,15 @@ public class WaveGameManager : MonoBehaviour
     public VirtualLegPose leftLeg;
     public VirtualLegPose rightLeg;
     public WaveHUD hud;
-    [Tooltip("Water sheet that runs up the beach (a copy is made at runtime)")]
+    [Tooltip("Material with the GP2/ShoreWave shader. Set: a realistic breaking wave is built in code. " +
+             "Empty: the old water sheet (a copy of waveTemplate) slides in instead")]
+    public Material waveMaterial;
+    [Tooltip("Material with the GP2/GhostLeg shader for the dark guide leg that shows where to put the leg")]
+    public Material ghostMaterial;
+    public bool showGuideLeg = true;
+    [Tooltip("Static scenery water to hide while the breaking wave is used (e.g. the permanent swash sheet at the feet)")]
+    public GameObject[] hideWithShoreWave;
+    [Tooltip("Water sheet that runs up the beach (a copy is made at runtime); only used without waveMaterial")]
     public Renderer waveTemplate;
     public Transform waveSpawn;
     [Tooltip("Sand height under the patient's feet")]
@@ -110,7 +118,10 @@ public class WaveGameManager : MonoBehaviour
     bool waveActive;
     Transform splash;
     AudioSource audioSource;
-    AudioClip clearClip, splashClip, alertClip, waveClip, backwashClip;
+    AudioClip clearClip, splashClip, alertClip, waveClip, backwashClip, crashClip;
+    ShoreWave shoreWave;
+    float sessionStartTime, peakSum;  // for the patient record: session length and average peak bend
+    int peakCount;
     SessionLogger logger;
 
     VirtualLegPose OperatedLeg => operatedLeg == Leg.Left ? leftLeg : rightLeg;
@@ -131,6 +142,9 @@ public class WaveGameManager : MonoBehaviour
             splash.localScale = Vector3.zero;
         }
         SetupAudio();
+        // Started from the start menu: the patient's record and stage fill in the therapist panel;
+        // the therapist can still change anything there before pressing Start.
+        ApplySessionConfig();
         if (useDoctorPanel)
         {
             panel = DoctorPanel.Create(this);
@@ -142,6 +156,30 @@ public class WaveGameManager : MonoBehaviour
             yield return WaitForStartPress();
             yield return RunSession();
         }
+    }
+
+    /// <summary>
+    /// Applies the patient and stage chosen in the start menu (if the session came from there).
+    /// Target ranges scale with the patient's comfortable maximum; the safety limit still caps them.
+    /// </summary>
+    bool ApplySessionConfig()
+    {
+        var p = SessionConfig.Game == TrainingGame.Beach ? SessionConfig.Patient : null;
+        if (p == null) return false;
+        int s = SessionConfig.Stage;
+        float top = safetyCeilingAngle - 5f;
+        patientId = p.name;
+        legMode = p.IsLeftLeg ? LegMode.Left : LegMode.Right;
+        operatedLeg = p.IsLeftLeg ? Leg.Left : Leg.Right;
+        movement = SessionConfig.Movement;
+        maxTargetAngle = Mathf.Min(top, Stages.BeachBendMax(s, p.comfortableMaxAngle));
+        minTargetAngle = Mathf.Min(maxTargetAngle - 5f, Stages.BeachBendMin(s, p.comfortableMaxAngle));
+        straightenEasiestAngle = Stages.BeachStraightenEasiest(s);
+        straightenHardestAngle = Stages.BeachStraightenHardest(s);
+        wavesPerSession = Stages.BeachWaves(s);
+        startHoldSeconds = Stages.BeachStartHold(s);
+        maxHoldSeconds = Stages.BeachMaxHold(s);
+        return true;
     }
 
     /// <summary>Called by the therapist panel's Start button.</summary>
@@ -177,9 +215,11 @@ public class WaveGameManager : MonoBehaviour
 
     void Update()
     {
+        if (RehabInput.MenuPressed) SessionConfig.ReturnToMenu();
         if (!hud) return;
         float angle = Angle;
         hud.SetAngle(angle, currentTarget, safetyCeilingAngle, currentMovement == Movement.Straighten);
+        UpdateGuideLeg(angle);
 
         if (sessionRunning)
         {
@@ -200,6 +240,23 @@ public class WaveGameManager : MonoBehaviour
 
     void LateUpdate() => RippleWave();
 
+    /// <summary>The dark guide leg shows the target pose whenever there is a target; it turns green when matched.</summary>
+    void UpdateGuideLeg(float angle)
+    {
+        var other = operatedLeg == Leg.Left ? rightLeg : leftLeg;
+        if (other) other.HideGhost();
+        if (!OperatedLeg) return;
+        if (!showGuideLeg || currentTarget < 0f)
+        {
+            OperatedLeg.HideGhost();
+            return;
+        }
+        bool straighten = currentMovement == Movement.Straighten;
+        bool matched = angle <= safetyCeilingAngle &&
+                       (straighten ? angle <= currentTarget + angleTolerance : angle >= currentTarget - angleTolerance);
+        OperatedLeg.ShowGhost(currentTarget, matched, ghostMaterial, feetSandHeight);
+    }
+
     void OnDestroy() => logger?.Dispose();
 
     // ---------------- Session flow ----------------
@@ -213,7 +270,9 @@ public class WaveGameManager : MonoBehaviour
         {
             hud.SetStatus("Therapist is setting up\nthe session...", WaveHUD.Neutral);
             hud.SetInfo("");
-            panel.Show();
+            ApplySessionConfig(); // pre-fill from the patient and stage (the stage may have moved up)
+            panel.Show(SessionConfig.Active && SessionConfig.Game == TrainingGame.Beach
+                ? $"{patientId}   ·   {Stages.Name(SessionConfig.Stage)}   ·   values from the stage, change any you need" : null);
             // A panel floating in the scene would overlap the patient HUD, so hide the HUD meanwhile.
             if (panelsInPatientView) hud.gameObject.SetActive(false);
             // The panel's Start button is the only way to begin (Space would type into its fields).
@@ -222,10 +281,19 @@ public class WaveGameManager : MonoBehaviour
             hud.gameObject.SetActive(true);
             yield break;
         }
+        ApplySessionConfig(); // the stage may have moved up after the last session
         hud.SetStatus("Press  A  or  Space  to start", WaveHUD.Neutral);
-        hud.SetInfo($"Patient {patientId}  ·  {legMode} knee  ·  {movement}");
+        string stageText = SessionConfig.Active ? $"  ·  {Stages.Name(SessionConfig.Stage)}" : "";
+        hud.SetInfo($"Patient {patientId}  ·  {legMode} knee  ·  {movement}{stageText}");
+        hud.SetScore(-1, 0);
+        if (!hud.ResultsShowing)
+            hud.ShowTitleCard($"{patientId}  ·  {legMode} knee  ·  {movement}{stageText}\n{wavesPerSession} waves  ·  keep your feet dry!",
+                              "PRESS  A  TO  START");
         yield return null;
         while (!StartPressed()) yield return null;
+        UISound.Click();
+        hud.HideTitleCard();
+        hud.HideResults();
     }
 
     /// <summary>One whole session: the chosen leg, or right then left when training both.</summary>
@@ -234,6 +302,9 @@ public class WaveGameManager : MonoBehaviour
         Leg[] stages = legMode == LegMode.Both ? new[] { Leg.Right, Leg.Left }
                      : new[] { legMode == LegMode.Left ? Leg.Left : Leg.Right };
         results.Clear();
+        sessionStartTime = Time.time;
+        peakSum = 0f;
+        peakCount = 0;
 
         for (int s = 0; s < stages.Length; s++)
         {
@@ -259,14 +330,66 @@ public class WaveGameManager : MonoBehaviour
             bestAngle = best, mode = legMode.ToString(), date = System.DateTime.UtcNow.ToString("o"),
         };
         var board = Leaderboard.Add(entry, out int rank);
+        float fraction = totalWaves > 0 ? (float)totalCleared / totalWaves : 0f;
+        int alerts = 0;
+        foreach (var r in results) alerts += r.safetyAlerts;
+
+        // Started from the menu: save to the patient's record and maybe unlock the next stage.
+        string prompt = "PRESS  A  TO  PLAY AGAIN";
+        var stageRow = ("Stage", "-", Color.white);
+        bool unlocked = false;
+        int played = SessionConfig.Stage;
+        if (SessionConfig.Active && SessionConfig.Game == TrainingGame.Beach)
+        {
+            var extras = new SessionExtras
+            {
+                durationSeconds = Time.time - sessionStartTime,
+                avgAngle = peakCount > 0 ? peakSum / peakCount : 0f,
+                safetyAlerts = alerts,
+                leg = legMode.ToString(),
+            };
+            foreach (var r in results)
+                if (r.leg == Leg.Left) extras.bestLeft = Mathf.Max(extras.bestLeft, r.bestAngle);
+                else extras.bestRight = Mathf.Max(extras.bestRight, r.bestAngle);
+            unlocked = PatientStore.RecordSession(SessionConfig.PatientId, TrainingGame.Beach, played, TotalScore(),
+                                                  fraction, best, extras, out bool passed);
+            stageRow = (Stages.Name(played), passed ? "PASSED" : $"need {Stages.PassFraction * 100f:0}%", passed ? WaveHUD.Good : WaveHUD.Accent);
+            if (unlocked) SessionConfig.Stage = played + 1;
+            prompt = $"A: PLAY STAGE {SessionConfig.Stage}   ·   ESC: MENU";
+        }
+
+        hud.Popup("SESSION DONE!", $"{totalCleared} / {totalWaves} waves cleared", WaveHUD.Accent, 2.2f);
+        yield return new WaitForSeconds(2.5f);
+        if (unlocked)
+        {
+            UISound.Confirm();
+            hud.Popup($"STAGE {played + 1} UNLOCKED!", Stages.Name(played + 1), WaveHUD.Accent, 2.6f);
+            yield return new WaitForSeconds(2.8f);
+        }
+
         if (resultsPanel)
         {
+            // Therapist's results screen; its New session button brings back the setup panel.
             resultsPanel.Show(patientId, results, minTargetAngle, maxTargetAngle, board, entry, rank);
             if (panelsInPatientView) hud.gameObject.SetActive(false);
             while (resultsPanel.IsOpen) yield return null;
             hud.gameObject.SetActive(true);
         }
-        else yield return new WaitForSeconds(3f);
+        else
+        {
+            // No therapist panel: show the patient their own results card; A / Space starts the next session.
+            int stars = fraction >= 0.8f ? 3 : fraction >= 0.5f ? 2 : totalCleared > 0 ? 1 : 0;
+            hud.ShowResults("SESSION RESULTS", stars,
+                stars == 3 ? "Amazing - you beat the waves!" : stars == 2 ? "Great work - nearly dry!" : "Good effort - keep practising",
+                stars >= 2 ? WaveHUD.Good : WaveHUD.Accent, new[]
+                {
+                    ("Score", TotalScore().ToString(), Color.white),
+                    ("Waves cleared", $"{totalCleared} / {totalWaves}", Color.white),
+                    ("Best knee bend", $"{best:0}°", Color.white),
+                    stageRow.Item2 != "-" ? stageRow : ("Leaderboard rank", rank > 0 ? $"#{rank}" : "-", WaveHUD.Accent),
+                    ("Safety alerts", alerts.ToString(), alerts > 0 ? WaveHUD.Bad : WaveHUD.Good),
+                }, prompt);
+        }
     }
 
     int TotalScore()
@@ -296,7 +419,11 @@ public class WaveGameManager : MonoBehaviour
         {
             hud.SetStatus($"Part {index + 1} of {stages.Length}:  {which} LEG\n{order}", WaveHUD.Accent);
             hud.SetInfo($"Press A / Space when ready  ·  starting in {Mathf.CeilToInt(left)}");
-            if (StartPressed()) yield break;
+            if (StartPressed())
+            {
+                UISound.Click();
+                yield break;
+            }
             yield return null;
         }
     }
@@ -313,11 +440,16 @@ public class WaveGameManager : MonoBehaviour
         logger = new SessionLogger(patientId, operatedLeg.ToString());
         Debug.Log($"[WaveGame] Logging session to {logger.FilePath}");
 
+        hud.SetScore(0, 0);
         for (int n = 3; n > 0; n--)
         {
             hud.SetStatus($"Get ready...  {n}", WaveHUD.Neutral);
+            hud.Popup(n.ToString(), "", WaveHUD.Accent, 0.9f);
+            UISound.Tick();
             yield return new WaitForSeconds(1f);
         }
+        hud.Popup("SURF'S UP!", "", WaveHUD.Good, 1.2f);
+        UISound.Go();
 
         for (int i = 1; i <= wavesPerSession; i++)
         {
@@ -372,14 +504,22 @@ public class WaveGameManager : MonoBehaviour
         hud.SetStatus($"Wave coming!\n{instruction}", WaveHUD.Accent);
         Play(waveClip);
         waveActive = true;
-        for (float t = 0f; t < approachSeconds; t += Time.deltaTime)
+        if (shoreWave)
         {
-            float k = t / approachSeconds;
-            // Fast surge at first, slowing as the water runs out of energy on the sand.
-            float run = 1f - Mathf.Pow(1f - k, 3f);
-            SetWave(Mathf.Lerp(startEdge, reachEdge, run));
-            yield return null;
+            // Swell rolls in, curls, crashes about two metres in front of the patient, then the swash runs up.
+            shoreWave.feetZ = feetZ;
+            yield return shoreWave.Approach(startEdge, reachEdge, approachSeconds);
         }
+        else
+            for (float t = 0f; t < approachSeconds; t += Time.deltaTime)
+            {
+                float k = t / approachSeconds;
+                // Fast surge at first, slowing as the water runs out of energy on the sand.
+                float run = 1f - Mathf.Pow(1f - k, 3f);
+                SetWave(Mathf.Lerp(startEdge, reachEdge, run));
+                yield return null;
+            }
+        float lapTime = 0f;
 
         // 2. Hold: the angle must stay on target while the water sits at the feet.
         float heldTime = 0f, minAngle = float.MaxValue, maxAngle = float.MinValue;
@@ -395,16 +535,22 @@ public class WaveGameManager : MonoBehaviour
             minAngle = Mathf.Min(minAngle, angle);
             maxAngle = Mathf.Max(maxAngle, angle);
 
-            hud.SetHold(t / hold);
+            hud.SetHold(t / hold, holding);
             if (overLimit) hud.SetStatus("Too far!\nEase back a little", WaveHUD.Bad);
             else if (holding) hud.SetStatus("Hold it!", WaveHUD.Good);
             else hud.SetStatus($"Feet in the water!\n{instruction}", WaveHUD.Bad);
-            SetWave(reachEdge + Mathf.Sin(t * 3f) * 0.03f);
+            if (shoreWave) shoreWave.Hold(reachEdge, lapTime += Time.deltaTime);
+            else SetWave(reachEdge + Mathf.Sin(t * 3f) * 0.03f);
             yield return null;
         }
 
         // 3. Result, scoring and difficulty.
         float fraction = hold > 0f ? heldTime / hold : 0f;
+        if (maxAngle > float.MinValue)
+        {
+            peakSum += maxAngle; // the deepest bend reached during this wave
+            peakCount++;
+        }
         bool waveCleared = fraction >= clearFraction;
         wavesDone++;
         heldSum += fraction;
@@ -428,6 +574,7 @@ public class WaveGameManager : MonoBehaviour
             ChangeLevel(currentMovement, +targetLevelStep);
             holdSeconds = Mathf.Min(maxHoldSeconds, holdSeconds + holdSecondsStep);
             hud.SetStatus($"Wave cleared!  +{points}", WaveHUD.Good);
+            hud.Popup("WAVE CLEARED!", streak >= 2 ? $"+{points}   ·   {streak} in a row!" : $"+{points}", WaveHUD.Good, 1.8f);
             Play(clearClip);
         }
         else
@@ -436,10 +583,12 @@ public class WaveGameManager : MonoBehaviour
             streak = 0;
             ChangeLevel(currentMovement, -targetLevelStep);
             hud.SetStatus(points > 0 ? $"Splash!  +{points}" : "Splash!", WaveHUD.Bad);
+            hud.Popup("SPLASH!", points > 0 ? $"+{points}  ·  keep it up!" : "Try again on the next wave", WaveHUD.Bad, 1.8f);
             Play(splashClip);
             if (splash) StartCoroutine(SplashAt(OperatedLeg.HeelPosition));
         }
         score += points;
+        hud.SetScore(score, streak);
         hud.SetHold(-1f);
         hud.SetInfo($"Wave {index}/{wavesPerSession}  ·  Score {score}  ·  Streak {streak}");
 
@@ -449,6 +598,18 @@ public class WaveGameManager : MonoBehaviour
         // 4. Wave pulls back out to sea.
         currentTarget = -1f;
         currentMovement = Movement.Bend;
+        if (shoreWave)
+        {
+            for (float t = 0f; t < resultSeconds; t += Time.deltaTime)
+            {
+                shoreWave.Hold(reachEdge, lapTime += Time.deltaTime);
+                yield return null;
+            }
+            Play(backwashClip);
+            yield return shoreWave.Retreat(reachEdge, Mathf.Max(startEdge, reachEdge - 3.5f), retreatSeconds);
+            waveActive = false;
+            yield break;
+        }
         yield return new WaitForSeconds(resultSeconds);
         Play(backwashClip);
         for (float t = 0f; t < retreatSeconds; t += Time.deltaTime)
@@ -493,6 +654,23 @@ public class WaveGameManager : MonoBehaviour
 
     void CreateWave()
     {
+        if (waveMaterial)
+        {
+            var sw = new GameObject("ShoreWave", typeof(MeshFilter), typeof(MeshRenderer));
+            sw.transform.SetParent(transform, false);
+            var r = sw.GetComponent<MeshRenderer>();
+            r.sharedMaterial = waveMaterial;
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            feetZ = OperatedLeg.HeelPosition.z;
+            shoreWave = sw.AddComponent<ShoreWave>();
+            shoreWave.feetSandHeight = feetSandHeight;
+            shoreWave.beachSlope = beachSlope;
+            shoreWave.feetZ = feetZ;
+            shoreWave.OnBreak = () => Play(crashClip);
+            if (hideWithShoreWave != null)
+                foreach (var hidden in hideWithShoreWave) if (hidden) hidden.SetActive(false);
+            return;
+        }
         if (!waveTemplate) return;
         var go = new GameObject("GameWave", typeof(MeshFilter), typeof(MeshRenderer));
         wave = go.transform;
@@ -616,7 +794,10 @@ public class WaveGameManager : MonoBehaviour
         clearClip = GeneratedAudio.Tone("Cleared", new[] { 660f, 880f, 1320f }, 0.12f, 0.35f);
         alertClip = GeneratedAudio.Tone("SafetyAlert", new[] { 1000f, 0f, 1000f, 0f, 1000f }, 0.1f, 0.4f);
         splashClip = GeneratedAudio.Noise("Splash", 0.6f, 6f, 0.35f);
-        waveClip = Surf("WaveIn", 4.5f, 0.7f, 0.5f);       // builds up, crashes, hisses out
+        // Roar builds while the swell rolls in and peaks when it breaks (60% of the approach).
+        float roar = approachSeconds + 1.2f;
+        waveClip = Surf("WaveIn", roar, approachSeconds * 0.6f / roar, 0.45f);
+        crashClip = Surf("Crash", 1.8f, 0.06f, 0.6f);      // the lip hitting the water: sudden, then fizzing foam
         backwashClip = Surf("Backwash", 3f, 0.25f, 0.3f);  // quieter drain back to sea
     }
 

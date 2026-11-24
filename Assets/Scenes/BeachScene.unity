@@ -2679,8 +2679,12 @@ MonoBehaviour:
   legMode: 1
   useDoctorPanel: 1
   panelsInPatientView: 0
+  movement: 0
   minTargetAngle: 30
   maxTargetAngle: 90
+  straightenEasiestAngle: 60
+  straightenHardestAngle: 5
+  restingKneeAngle: 90
   safetyCeilingAngle: 110
   wavesPerSession: 10
   startTargetLevel: 0.3
@@ -2700,6 +2704,17 @@ MonoBehaviour:
   leftLeg: {fileID: 294058919}
   rightLeg: {fileID: 649403687}
   hud: {fileID: 2085454958}
+  waveMaterial: {fileID: 2100000, guid: b1451a171ad118d4384f2e0f2a486de0, type: 2}
+  ghostMaterial: {fileID: 2100000, guid: 34fd650479ac661499441148d76da83b, type: 2}
+  showGuideLeg: 1
+  hideWithShoreWave:
+  - {fileID: 1852752525}
+  - {fileID: 1935618794}
+  - {fileID: 1262752606}
+  - {fileID: 1788285739}
+  - {fileID: 603796235}
+  - {fileID: 1438495703}
+  - {fileID: 607615908}
   waveTemplate: {fileID: 2044748355}
   waveSpawn: {fileID: 793884529}
   feetSandHeight: 0.072
@@ -3680,6 +3695,16 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1652571593}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &603796235 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 5907998005814101699, guid: 682bbe6d429cfba42ae2ebb1669fa158, type: 3}
+  m_PrefabInstance: {fileID: 1448354950}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &607615908 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: -3144208803770174247, guid: 682bbe6d429cfba42ae2ebb1669fa158, type: 3}
+  m_PrefabInstance: {fileID: 1448354950}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &607913082
 GameObject:
   m_ObjectHideFlags: 0
@@ -7002,6 +7027,11 @@ Transform:
   m_Children: []
   m_Father: {fileID: 553324015}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1262752606 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 8272790883356296189, guid: 682bbe6d429cfba42ae2ebb1669fa158, type: 3}
+  m_PrefabInstance: {fileID: 1448354950}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1270673296
 GameObject:
   m_ObjectHideFlags: 0
@@ -8055,6 +8085,11 @@ Transform:
   - {fileID: 342647682}
   m_Father: {fileID: 1219252111}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1438495703 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 7781103689313844462, guid: 682bbe6d429cfba42ae2ebb1669fa158, type: 3}
+  m_PrefabInstance: {fileID: 1448354950}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1439316688
 GameObject:
   m_ObjectHideFlags: 0
@@ -8327,6 +8362,10 @@ PrefabInstance:
       propertyPath: m_FocusDistance
       value: 10000
       objectReference: {fileID: 0}
+    - target: {fileID: -1259644592951054247, guid: 682bbe6d429cfba42ae2ebb1669fa158, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 240831658362ab44aadbdc06a61176b3, type: 2}
     - target: {fileID: -634390397672621849, guid: 682bbe6d429cfba42ae2ebb1669fa158, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x
       value: -89.97195
@@ -8343,6 +8382,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Coastal_Arena
       objectReference: {fileID: 0}
+    - target: {fileID: 2638217479897672144, guid: 682bbe6d429cfba42ae2ebb1669fa158, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 90a08c16e492db04a8f94e1e41b82fb8, type: 2}
     - target: {fileID: 3121034362415195459, guid: 682bbe6d429cfba42ae2ebb1669fa158, type: 3}
       propertyPath: m_IsActive
       value: 0
@@ -10484,6 +10527,11 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1960280683}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1788285739 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: -419385842022133752, guid: 682bbe6d429cfba42ae2ebb1669fa158, type: 3}
+  m_PrefabInstance: {fileID: 1448354950}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1797578425
 GameObject:
   m_ObjectHideFlags: 0
@@ -10713,6 +10761,11 @@ SkinnedMeshRenderer:
     m_Center: {x: 0.008180305, y: -0.0053694975, z: -0.020344593}
     m_Extent: {x: 0.046097822, y: 0.067293465, z: 0.0557265}
   m_DirtyAABB: 0
+--- !u!1 &1852752525 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 1664939677460133686, guid: 682bbe6d429cfba42ae2ebb1669fa158, type: 3}
+  m_PrefabInstance: {fileID: 1448354950}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1853219772
 GameObject:
   m_ObjectHideFlags: 0
@@ -10992,6 +11045,11 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1060862416}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1935618794 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: -8098231541197558896, guid: 682bbe6d429cfba42ae2ebb1669fa158, type: 3}
+  m_PrefabInstance: {fileID: 1448354950}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1938224009
 GameObject:
   m_ObjectHideFlags: 0
@@ -11866,6 +11924,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8d54dbfcb8462654aa60d8c64ba7e8e5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::WaveHUD
+  theme: 0
   gaugeMaxAngle: 140
 --- !u!224 &2085454959
 RectTransform:

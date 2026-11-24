@@ -887,6 +887,11 @@ SkinnedMeshRenderer:
     m_Center: {x: -0.009029879, y: -0.064930744, z: -0.06743039}
     m_Extent: {x: 0.0043483684, y: 0.0068749115, z: 0.006839171}
   m_DirtyAABB: 0
+--- !u!23 &187116625 stripped
+MeshRenderer:
+  m_CorrespondingSourceObject: {fileID: -2629511387219224146, guid: c86e3e54448306c4582a8f572b881942, type: 3}
+  m_PrefabInstance: {fileID: 1152734679}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &199023664
 GameObject:
   m_ObjectHideFlags: 0
@@ -2849,6 +2854,75 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 567653129}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &461576852
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 461576854}
+  - component: {fileID: 461576853}
+  m_Layer: 0
+  m_Name: StadiumCrowd
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &461576853
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 461576852}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a7546de0333e73347814c47f067abf59, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StadiumCrowd
+  frontCenter: {x: 0, y: 0, z: -3.5}
+  width: 22
+  tiers: 4
+  tierDepth: 0.9
+  tierRise: 0.5
+  firstTierHeight: 0.45
+  roof: 1
+  spectatorPrefabs:
+  - {fileID: 7745439358442123188, guid: af783fa0fa71e9a4195391f68699d6d3, type: 3}
+  - {fileID: 6366495273151179649, guid: 88ad6ddac579e804197a0817772f8edc, type: 3}
+  - {fileID: 5507512830178458083, guid: 0a9851151805a5e4083c42214068380e, type: 3}
+  - {fileID: 7081258937814868314, guid: cd9dee3353b65054ca52e153d8a5d52b, type: 3}
+  - {fileID: 2301917503794211274, guid: 16543fbf630340e418f8cbd3abc4b75b, type: 3}
+  - {fileID: 4281867545765957499, guid: 3c6c0e4bb34d4f741b109d2bfe8b3bf6, type: 3}
+  - {fileID: 3469352812916947363, guid: a0321bab9133f2543a612299020f2b62, type: 3}
+  - {fileID: 3405994492895629081, guid: 7d4bba5ac10c0f64d8c6d222d62c7762, type: 3}
+  spectators: 20
+  clearBehindGoal: 4.2
+  seed: 11
+  materialSource: {fileID: 187116625}
+  musicClip: {fileID: 0}
+  cheerClip: {fileID: 0}
+  groanClip: {fileID: 0}
+  musicVolume: 0.35
+  reactionVolume: 0.9
+--- !u!4 &461576854
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 461576852}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1433304584}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &463073830
 GameObject:
@@ -6674,6 +6748,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8d54dbfcb8462654aa60d8c64ba7e8e5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::WaveHUD
+  theme: 0
   gaugeMaxAngle: 140
 --- !u!224 &1133205138
 RectTransform:
@@ -7042,6 +7117,10 @@ PrefabInstance:
       propertyPath: m_CastShadows
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 7381471050017671718, guid: c86e3e54448306c4582a8f572b881942, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: fd9cdfefd0cc8a84baccc3207d9a0e56, type: 2}
     - target: {fileID: 8431803725183138498, guid: c86e3e54448306c4582a8f572b881942, type: 3}
       propertyPath: m_IsActive
       value: 1
@@ -8828,6 +8907,11 @@ MonoBehaviour:
   - {fileID: 1152734680}
   supportRail: {fileID: 634029638}
   targetColor: {r: 0.3, g: 0.85, b: 1, a: 1}
+  crowd: {fileID: 461576853}
+  kickSound: {fileID: 0}
+  netSound: {fileID: 0}
+  whistleSound: {fileID: 0}
+  finalWhistleSound: {fileID: 0}
 --- !u!4 &1433304584
 Transform:
   m_ObjectHideFlags: 0
@@ -8843,6 +8927,7 @@ Transform:
   m_Children:
   - {fileID: 480744351}
   - {fileID: 1133205138}
+  - {fileID: 461576854}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1439316688

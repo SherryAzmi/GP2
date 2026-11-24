@@ -66,10 +66,20 @@ public class KickGameManager : MonoBehaviour
     public Renderer[] targets;
     public GameObject supportRail;
     public Color targetColor = new Color(0.3f, 0.85f, 1f);
+    [Tooltip("Spectators in the stand; found automatically when left empty")]
+    public StadiumCrowd crowd;
+
+    [Header("Sounds (empty = generated)")]
+    public AudioClip kickSound;
+    public AudioClip netSound;
+    public AudioClip whistleSound;
+    public AudioClip finalWhistleSound;
 
     // Session state
     bool sessionRunning;
-    int score, streak, goals, safetyAlerts, balancePauses;
+    float sessionStartTime, peakSum;  // for the patient record: session length and average wind-up bend
+    int peakCount;
+    int score, streak, bestStreak, goals, safetyAlerts, balancePauses;
     float windUpPercent, sessionMaxAngle;
     float currentTarget = -1f;
     bool aboveCeiling, leaning;
@@ -84,7 +94,7 @@ public class KickGameManager : MonoBehaviour
     static readonly int EmissiveId = Shader.PropertyToID("emissiveFactor");
 
     AudioSource audioSource;
-    AudioClip readyClip, kickClip, goalClip, missClip, alertClip;
+    AudioClip readyClip, kickClip, goalClip, missClip, alertClip, netClip, whistleClip, finalWhistleClip;
     KickLogger logger;
 
     float Angle => angleSource ? angleSource.CurrentKneeAngle : 0f;
@@ -97,6 +107,8 @@ public class KickGameManager : MonoBehaviour
         flash = new float[targets.Length];
         if (cameraSensor) cameraSensor.useLeftLeg = operatedLeg == Leg.Left;
         block = new MaterialPropertyBlock();
+        if (!crowd) crowd = FindFirstObjectByType<StadiumCrowd>();
+        hud.ApplyTheme(UIStyle.Theme.Football);
         SetupAudio();
 
         while (true)
@@ -108,6 +120,7 @@ public class KickGameManager : MonoBehaviour
 
     void Update()
     {
+        if (RehabInput.MenuPressed) SessionConfig.ReturnToMenu();
         if (supportRail && supportRail.activeSelf != usesSupport) supportRail.SetActive(usesSupport);
 
         float angle = Angle;
@@ -150,17 +163,31 @@ public class KickGameManager : MonoBehaviour
         currentTarget = -1f;
         activeTarget = -1;
         hud.SetHold(-1f);
+        hud.SetScore(-1, 0);
+        ApplySessionConfig(); // the stage may have moved up after the last session
         hud.SetStatus("Press  A  or  Space  to start", WaveHUD.Neutral);
-        hud.SetInfo($"Patient {patientId}  ·  {operatedLeg} knee  ·  comfortable max {comfortableMaxAngle:0}°" +
-                    (usesSupport ? "  ·  with support" : ""));
+        string who = $"Patient {patientId}  ·  {operatedLeg} knee  ·  comfortable max {comfortableMaxAngle:0}°" +
+                     (usesSupport ? "  ·  with support" : "") +
+                     (SessionConfig.Active ? $"\n{Stages.Name(SessionConfig.Stage)}" : "");
+        hud.SetInfo(who.Replace("\n", "  ·  "));
+        // After a session the results card stays up and its button starts the next one; otherwise the start card.
+        if (!hud.ResultsShowing)
+            hud.ShowTitleCard($"{who}\n{kicksPerSession} penalties  ·  pull your heel back, then kick!", "PRESS  A  TO  KICK OFF");
         yield return null;
         while (!StartPressed()) yield return null;
+        UISound.Click();
+        hud.HideTitleCard();
+        hud.HideResults();
     }
 
     IEnumerator RunSession()
     {
         sessionRunning = true;
-        score = streak = goals = safetyAlerts = balancePauses = 0;
+        sessionStartTime = Time.time;
+        peakSum = 0f;
+        peakCount = 0;
+        score = streak = bestStreak = goals = safetyAlerts = balancePauses = 0;
+        hud.SetScore(0, 0);
         sessionMaxAngle = Angle;
         windUpPercent = startWindUpPercent;
         startHeadXZ = head ? Flat(head.position) : Vector3.zero;
@@ -170,8 +197,13 @@ public class KickGameManager : MonoBehaviour
         for (int n = 3; n > 0; n--)
         {
             hud.SetStatus($"Get ready...  {n}", WaveHUD.Neutral);
+            hud.Popup(n.ToString(), "", WaveHUD.Accent, 0.9f);
+            UISound.Tick();
             yield return new WaitForSeconds(1f);
         }
+        hud.Popup("KICK OFF!", "", WaveHUD.Good, 1.2f);
+        UISound.Go();
+        Play(whistleClip);
 
         for (int i = 1; i <= kicksPerSession; i++)
         {
@@ -187,9 +219,76 @@ public class KickGameManager : MonoBehaviour
         currentTarget = -1f;
         logger.Dispose();
         logger = null;
+        Play(finalWhistleClip);
         hud.SetStatus($"Session complete!\nScore {score}  ·  goals {goals}/{kicksPerSession}", WaveHUD.Accent);
         hud.SetInfo($"Best knee bend this session: {sessionMaxAngle:0}°");
-        yield return new WaitForSeconds(3f);
+        hud.Popup("FULL TIME!", $"{goals} / {kicksPerSession} goals", WaveHUD.Accent, 2.2f);
+        if (goals > 0) crowd?.Cheer(4f);
+        yield return new WaitForSeconds(2.5f);
+
+        float fraction = (float)goals / Mathf.Max(1, kicksPerSession);
+        int stars = fraction >= 0.8f ? 3 : fraction >= 0.5f ? 2 : goals > 0 ? 1 : 0;
+        string rating = stars == 3 ? "Champion! Brilliant kicking" : stars == 2 ? "Great match - well played"
+                      : stars == 1 ? "Good effort - keep practising" : "Every kick makes you stronger";
+        // Started from the menu: save to the patient's record and maybe unlock the next stage.
+        string prompt = "PRESS  A  TO  PLAY AGAIN";
+        var fourthRow = ("Best streak", bestStreak.ToString(), Color.white);
+        if (SessionConfig.Active && SessionConfig.Game == TrainingGame.Football)
+        {
+            int played = SessionConfig.Stage;
+            var extras = new SessionExtras
+            {
+                durationSeconds = Time.time - sessionStartTime,
+                avgAngle = peakCount > 0 ? peakSum / peakCount : 0f,
+                safetyAlerts = safetyAlerts,
+                leg = operatedLeg.ToString(),
+                bestLeft = operatedLeg == Leg.Left ? sessionMaxAngle : 0f,
+                bestRight = operatedLeg == Leg.Right ? sessionMaxAngle : 0f,
+            };
+            bool unlocked = PatientStore.RecordSession(SessionConfig.PatientId, TrainingGame.Football, played, score,
+                                                       fraction, sessionMaxAngle, extras, out bool passed);
+            fourthRow = (Stages.Name(played), passed ? "PASSED" : $"need {Stages.PassFraction * 100f:0}%", passed ? WaveHUD.Good : WaveHUD.Accent);
+            if (unlocked)
+            {
+                SessionConfig.Stage = played + 1;
+                UISound.Confirm();
+                crowd?.Cheer(3f);
+                hud.Popup($"STAGE {played + 1} UNLOCKED!", Stages.Name(played + 1), WaveHUD.Accent, 2.6f);
+                yield return new WaitForSeconds(2.8f);
+            }
+            prompt = $"A: PLAY STAGE {SessionConfig.Stage}   ·   ESC: MENU";
+        }
+        hud.ShowResults("FULL TIME", stars, rating, stars >= 2 ? WaveHUD.Good : WaveHUD.Accent, new[]
+        {
+            ("Score", score.ToString(), Color.white),
+            ("Goals", $"{goals} / {kicksPerSession}", Color.white),
+            fourthRow,
+            ("Best knee bend", $"{sessionMaxAngle:0}°", Color.white),
+            ("Balance pauses", balancePauses.ToString(), balancePauses > 0 ? WaveHUD.Accent : WaveHUD.Good),
+            ("Safety alerts", safetyAlerts.ToString(), safetyAlerts > 0 ? WaveHUD.Bad : WaveHUD.Good),
+        }, prompt);
+    }
+
+    /// <summary>
+    /// Applies the patient and stage chosen in the start menu (if the session came from there).
+    /// Wind-up targets are a share of the patient's own comfortable maximum, capped by the safety limit.
+    /// </summary>
+    bool ApplySessionConfig()
+    {
+        var p = SessionConfig.Game == TrainingGame.Football ? SessionConfig.Patient : null;
+        if (p == null) return false;
+        int s = SessionConfig.Stage;
+        patientId = p.name;
+        operatedLeg = p.IsLeftLeg ? Leg.Left : Leg.Right;
+        if (cameraSensor) cameraSensor.useLeftLeg = operatedLeg == Leg.Left;
+        comfortableMaxAngle = p.comfortableMaxAngle;
+        kicksPerSession = Stages.Kicks(s);
+        startWindUpPercent = Stages.KickStartPercent(s);
+        minWindUpPercent = Stages.KickMinPercent(s);
+        maxWindUpPercent = Stages.KickMaxPercent(s);
+        windUpHoldSeconds = Stages.KickHoldSeconds(s);
+        attemptSeconds = Stages.KickAttemptSeconds(s);
+        return true;
     }
 
     IEnumerator RunKick(int index)
@@ -237,6 +336,7 @@ public class KickGameManager : MonoBehaviour
             hud.SetHold(-1f);
             hud.SetStatus("Now kick!\nStraighten your leg", WaveHUD.Good);
             Play(readyClip);
+            crowd?.Clap(); // the crowd claps the patient through the kick
             float straightening = -1f;
             waited = 0f;
             minExtension = Angle;
@@ -268,12 +368,16 @@ public class KickGameManager : MonoBehaviour
         {
             points = 100 + streak * 20;
             streak++;
+            bestStreak = Mathf.Max(bestStreak, streak);
             goals++;
             windUpPercent = Mathf.Min(maxWindUpPercent, windUpPercent + windUpPercentStep);
             Play(kickClip);
             yield return FlyBall(aim, flightSeconds, 0.6f);
             flash[zone] = 1f;
+            Play(netClip);
             Play(goalClip);
+            crowd?.Cheer();
+            hud.Popup("GOAL!", streak >= 2 ? $"+{points}   ·   {streak} in a row!" : $"+{points}", WaveHUD.Good, 2f);
             hud.SetStatus($"Goal!  +{points}", WaveHUD.Good);
         }
         else
@@ -287,23 +391,39 @@ public class KickGameManager : MonoBehaviour
                 points = Mathf.RoundToInt(fraction * 40f);
                 Vector3 dir = Flat(aim - ballHome).normalized;
                 Play(kickClip);
-                yield return FlyBall(ballHome + dir * (1.5f + 5f * fraction), flightSeconds * 1.4f, 0.1f);
+                bool wide = fraction >= 0.5f;
+                if (wide)
+                {
+                    // A strong but incomplete kick slices past the post and goes out.
+                    float side = Mathf.Sign(aim.x - ballHome.x);
+                    if (side == 0f) side = Random.value < 0.5f ? -1f : 1f;
+                    Vector3 outside = new Vector3(side * 5.2f, 0.6f, aim.z - 1.5f);
+                    yield return FlyBall(outside, flightSeconds * 1.2f, 0.9f);
+                }
+                else yield return FlyBall(ballHome + dir * (1.5f + 5f * fraction), flightSeconds * 1.4f, 0.1f);
                 Play(missClip);
+                crowd?.Groan();
+                hud.Popup(wide ? "WIDE!" : "SO CLOSE!", "Straighten all the way", WaveHUD.Bad, 1.8f);
                 hud.SetStatus(points > 0 ? $"Almost!  +{points}\nStraighten all the way" : "Almost!\nStraighten all the way", WaveHUD.Bad);
             }
             else
             {
                 points = 0;
                 Play(missClip);
+                crowd?.Groan();
+                hud.Popup("MISSED", "A smaller bend next time", WaveHUD.Bad, 1.8f);
                 hud.SetStatus("Missed\nA smaller bend next time", WaveHUD.Bad);
             }
         }
         score += points;
+        hud.SetScore(score, streak);
         activeTarget = -1;
         hud.SetInfo($"Kick {index}/{kicksPerSession}  ·  Score {score}  ·  Streak {streak}");
         Debug.Log($"[KickGame] Kick {index}: {targets[zone].name} target {target:0}° max {maxFlexion:0}° min {minExtension:0}° " +
                   $"armed={armed} full={fullExtension} goal={goal} +{points}");
 
+        peakSum += maxFlexion; // deepest wind-up of this kick, for the patient record
+        peakCount++;
         logger.LogKick(index, targets[zone].name, percentUsed, target, maxFlexion, minExtension, armed, fullExtension, goal,
                        points, score, sessionMaxAngle, safetyAlerts, balancePauses);
 
@@ -385,7 +505,10 @@ public class KickGameManager : MonoBehaviour
         audioSource = gameObject.AddComponent<AudioSource>();
         audioSource.playOnAwake = false;
         readyClip = GeneratedAudio.Tone("Ready", new[] { 880f }, 0.1f, 0.25f);
-        kickClip = GeneratedAudio.Noise("Kick", 0.25f, 18f, 0.5f);
+        kickClip = kickSound ? kickSound : GeneratedAudio.Kick("Kick", 0.8f);
+        netClip = netSound ? netSound : GeneratedAudio.NetSwish("Net", 0.5f);
+        whistleClip = whistleSound ? whistleSound : GeneratedAudio.Whistle("Whistle", new[] { 0.7f }, 0.35f);
+        finalWhistleClip = finalWhistleSound ? finalWhistleSound : GeneratedAudio.Whistle("FinalWhistle", new[] { 0.3f, 0.3f, 0.9f }, 0.35f);
         goalClip = GeneratedAudio.Tone("Goal", new[] { 660f, 880f, 1320f }, 0.12f, 0.35f);
         missClip = GeneratedAudio.Tone("Miss", new[] { 440f, 330f }, 0.15f, 0.3f);
         alertClip = GeneratedAudio.Tone("SafetyAlert", new[] { 1000f, 0f, 1000f, 0f, 1000f }, 0.1f, 0.4f);
