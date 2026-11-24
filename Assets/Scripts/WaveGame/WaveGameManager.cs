@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Wave-avoidance core loop (GP1 4.3.2): a wave runs up the beach toward the patient's feet,
-/// the patient pulls the heel back (knee flexion) to the target angle and holds it until the wave
-/// retreats. Targets are a percentage of the patient's comfortable range and never pass the safety limit.
+/// Wave-avoidance core loop (GP1 4.3.2): a wave runs up the beach toward the patient's feet and the patient
+/// keeps them out of the water until it retreats. The therapist picks the movement: Bend pulls the heel back
+/// (knee flexion: the angle must reach the target or more), Straighten lifts the foot up (knee extension: the angle
+/// must come down to the target or less), Alternate switches every wave. Each movement has its own target range
+/// and its own difficulty; bend targets never pass the safety limit.
 ///
 /// Loop: wave comes in -> hold the target angle -> cleared (points) or splashed -> logged to CSV -> next wave.
 /// </summary>
@@ -14,6 +16,8 @@ public class WaveGameManager : MonoBehaviour
     public enum Leg { Left, Right }
     /// <summary>Both = right leg first, then the left, with an instruction screen between them.</summary>
     public enum LegMode { Left, Right, Both }
+    /// <summary>Bend = pull the heel back (flexion), Straighten = lift the foot up (extension), Alternate = both in turn.</summary>
+    public enum Movement { Bend, Straighten, Alternate }
 
     [Header("Patient (defaults for the therapist panel)")]
     [Tooltip("Patient name; also used in the session CSV file name")]
@@ -26,10 +30,18 @@ public class WaveGameManager : MonoBehaviour
     [Tooltip("ON: the setup and results panels float in the beach scene in front of the patient (for recording a video). " +
              "OFF: they are screen overlays on the therapist's monitor only")]
     public bool panelsInPatientView = false;
-    [Tooltip("Easiest target for this patient, in degrees")]
+    [Tooltip("Which knee movement the waves train")]
+    public Movement movement = Movement.Bend;
+    [Tooltip("Bend: easiest target for this patient, in degrees")]
     public float minTargetAngle = 30f;
-    [Tooltip("Hardest target for this patient (their comfortable maximum), in degrees")]
+    [Tooltip("Bend: hardest target for this patient (their comfortable maximum), in degrees")]
     public float maxTargetAngle = 90f;
+    [Tooltip("Straighten: easiest target, in degrees (a small lift of the foot)")]
+    public float straightenEasiestAngle = 60f;
+    [Tooltip("Straighten: hardest target, in degrees (0 = a fully straight leg)")]
+    public float straightenHardestAngle = 5f;
+    [Tooltip("Knee angle of a foot resting on the ground while seated; Straighten waves wash over a foot there")]
+    public float restingKneeAngle = 90f;
     [Tooltip("Absolute safety limit (GP1 NFR-04). Never asked for; passing it raises an alert")]
     public float safetyCeilingAngle = 110f;
 
@@ -43,7 +55,7 @@ public class WaveGameManager : MonoBehaviour
     public float holdSecondsStep = 0.25f;
     [Tooltip("Part of the hold time the angle must stay on target to clear the wave")]
     [Range(0.5f, 1f)] public float clearFraction = 0.8f;
-    [Tooltip("Degrees below the target that still count as holding")]
+    [Tooltip("Degrees short of the target that still count as holding")]
     public float angleTolerance = 3f;
 
     [Header("Timing (seconds)")]
@@ -56,6 +68,8 @@ public class WaveGameManager : MonoBehaviour
 
     [Header("Scene references")]
     public JointAngleCalculator angleSource;
+    [Tooltip("Camera knee sensor; until it sends readings the simulator moves the leg")]
+    public CameraPoseJoints cameraSensor;
     public VirtualLegPose leftLeg;
     public VirtualLegPose rightLeg;
     public WaveHUD hud;
@@ -76,11 +90,13 @@ public class WaveGameManager : MonoBehaviour
     // Session state
     bool sessionRunning;
     int score, streak, cleared, safetyAlerts;
-    float targetLevel, holdSeconds, sessionMaxAngle, heldSum, highestCleared;
-    int wavesDone;
+    float bendLevel, straightenLevel, holdSeconds, sessionMaxAngle, sessionMinAngle, heldSum, highestCleared;
+    float lowestStraightenCleared;
+    int wavesDone, bendWaves, bendCleared, straightenWaves, straightenCleared;
     readonly List<StageResult> results = new List<StageResult>();
     ResultsPanel resultsPanel;
     float currentTarget = -1f;
+    Movement currentMovement = Movement.Bend;  // what the wave in progress asks for
     bool aboveCeiling;
     bool startRequested;
     DoctorPanel panel;
@@ -99,6 +115,7 @@ public class WaveGameManager : MonoBehaviour
 
     VirtualLegPose OperatedLeg => operatedLeg == Leg.Left ? leftLeg : rightLeg;
     float Angle => angleSource ? angleSource.CurrentKneeAngle : 0f;
+    bool SensorLost => cameraSensor && cameraSensor.TrackingLost;
 
     IEnumerator Start()
     {
@@ -128,13 +145,16 @@ public class WaveGameManager : MonoBehaviour
     }
 
     /// <summary>Called by the therapist panel's Start button.</summary>
-    public void ApplyDoctorSettings(string patientName, LegMode mode, float minAngle, float maxAngle,
-                                    int waves, float startHold, float maxHold)
+    public void ApplyDoctorSettings(string patientName, LegMode mode, Movement move, float minAngle, float maxAngle,
+                                    float straightenEasiest, float straightenHardest, int waves, float startHold, float maxHold)
     {
         patientId = patientName;
         legMode = mode;
+        movement = move;
         minTargetAngle = minAngle;
         maxTargetAngle = maxAngle;
+        straightenEasiestAngle = straightenEasiest;
+        straightenHardestAngle = straightenHardest;
         wavesPerSession = waves;
         startHoldSeconds = startHold;
         maxHoldSeconds = maxHold;
@@ -145,6 +165,7 @@ public class WaveGameManager : MonoBehaviour
     {
         if (leftLeg) leftLeg.angleSource = operatedLeg == Leg.Left ? leftSource : null;
         if (rightLeg) rightLeg.angleSource = operatedLeg == Leg.Right ? rightSource : null;
+        if (cameraSensor) cameraSensor.useLeftLeg = operatedLeg == Leg.Left;
     }
 
     void SwitchToLeg(Leg leg)
@@ -158,9 +179,13 @@ public class WaveGameManager : MonoBehaviour
     {
         if (!hud) return;
         float angle = Angle;
-        hud.SetAngle(angle, currentTarget, safetyCeilingAngle);
+        hud.SetAngle(angle, currentTarget, safetyCeilingAngle, currentMovement == Movement.Straighten);
 
-        if (sessionRunning) sessionMaxAngle = Mathf.Max(sessionMaxAngle, angle);
+        if (sessionRunning)
+        {
+            sessionMaxAngle = Mathf.Max(sessionMaxAngle, angle);
+            sessionMinAngle = Mathf.Min(sessionMinAngle, angle);
+        }
 
         bool over = angle > safetyCeilingAngle;
         if (over && !aboveCeiling)
@@ -169,7 +194,8 @@ public class WaveGameManager : MonoBehaviour
             if (sessionRunning) safetyAlerts++;
         }
         aboveCeiling = over;
-        hud.SetWarning(over ? "Too far! Ease your knee back gently" : null);
+        hud.SetWarning(over ? "Too far! Ease your knee back gently"
+                     : SensorLost ? "The camera can't see your leg" : null);
     }
 
     void LateUpdate() => RippleWave();
@@ -197,7 +223,7 @@ public class WaveGameManager : MonoBehaviour
             yield break;
         }
         hud.SetStatus("Press  A  or  Space  to start", WaveHUD.Neutral);
-        hud.SetInfo($"Patient {patientId}  ·  {legMode} knee  ·  targets {minTargetAngle:0}°–{maxTargetAngle:0}°");
+        hud.SetInfo($"Patient {patientId}  ·  {legMode} knee  ·  {movement}");
         yield return null;
         while (!StartPressed()) yield return null;
     }
@@ -279,9 +305,10 @@ public class WaveGameManager : MonoBehaviour
     {
         sessionRunning = true;
         score = streak = cleared = safetyAlerts = wavesDone = 0;
-        heldSum = highestCleared = 0f;
-        sessionMaxAngle = Angle;
-        targetLevel = startTargetLevel;
+        bendWaves = bendCleared = straightenWaves = straightenCleared = 0;
+        heldSum = highestCleared = lowestStraightenCleared = 0f;
+        sessionMaxAngle = sessionMinAngle = Angle;
+        bendLevel = straightenLevel = startTargetLevel;
         holdSeconds = startHoldSeconds;
         logger = new SessionLogger(patientId, operatedLeg.ToString());
         Debug.Log($"[WaveGame] Logging session to {logger.FilePath}");
@@ -312,25 +339,37 @@ public class WaveGameManager : MonoBehaviour
             leg = operatedLeg, waves = wavesDone, cleared = cleared, score = score,
             safetyAlerts = safetyAlerts, bestAngle = sessionMaxAngle,
             highestClearedTarget = highestCleared, avgHeld = wavesDone > 0 ? heldSum / wavesDone : 0f,
+            bendWaves = bendWaves, bendCleared = bendCleared, straightenWaves = straightenWaves,
+            straightenCleared = straightenCleared, bestStraighten = sessionMinAngle,
+            lowestStraightenCleared = lowestStraightenCleared,
         });
         hud.SetStatus($"{operatedLeg} leg finished!\nScore {score}  ·  cleared {cleared}/{wavesPerSession}", WaveHUD.Accent);
-        hud.SetInfo($"Best knee bend: {sessionMaxAngle:0}°");
+        hud.SetInfo(straightenWaves == 0 ? $"Best knee bend: {sessionMaxAngle:0}°"
+                  : bendWaves == 0 ? $"Straightest knee: {sessionMinAngle:0}°"
+                  : $"Best knee bend: {sessionMaxAngle:0}°  ·  straightest: {sessionMinAngle:0}°");
         yield return new WaitForSeconds(2f);
     }
 
     IEnumerator RunWave(int index)
     {
-        float target = TargetAngle();
-        float levelUsed = targetLevel;
+        currentMovement = movement != Movement.Alternate ? movement
+                        : index % 2 == 1 ? Movement.Bend : Movement.Straighten;
+        bool straighten = currentMovement == Movement.Straighten;
+        string instruction = straighten ? "Lift your foot up" : "Pull your heel back";
+        float target = TargetAngle(currentMovement);
+        float levelUsed = straighten ? straightenLevel : bendLevel;
         float hold = holdSeconds;
         currentTarget = target;
         hud.SetInfo($"Wave {index}/{wavesPerSession}  ·  Score {score}  ·  Streak {streak}");
         hud.SetHold(-1f);
 
-        // 1. Wave runs up the beach. The water stops just in front of where the heel is at the target angle.
+        // 1. Wave runs up the beach. Bend: the water stops just in front of where the heel is at the target angle.
+        // Straighten: it washes over a foot resting on the sand, so only a lifted foot stays dry.
         float startEdge = waveSpawn ? waveSpawn.position.z : -15f;
-        float reachEdge = OperatedLeg.HeelPositionAt(target).z - waterGapInFrontOfHeel;
-        hud.SetStatus("Wave coming!\nPull your heel back", WaveHUD.Accent);
+        float reachEdge = straighten
+            ? OperatedLeg.HeelPositionAt(restingKneeAngle).z + waterGapInFrontOfHeel
+            : OperatedLeg.HeelPositionAt(target).z - waterGapInFrontOfHeel;
+        hud.SetStatus($"Wave coming!\n{instruction}", WaveHUD.Accent);
         Play(waveClip);
         waveActive = true;
         for (float t = 0f; t < approachSeconds; t += Time.deltaTime)
@@ -348,8 +387,10 @@ public class WaveGameManager : MonoBehaviour
         {
             float angle = Angle;
             bool overLimit = angle > safetyCeilingAngle;
-            // Going past the safety limit never counts as holding.
-            bool holding = angle >= target - angleTolerance && !overLimit;
+            // Going past the safety limit never counts as holding, and neither does a frozen angle while the
+            // camera has lost the leg.
+            bool onTarget = straighten ? angle <= target + angleTolerance : angle >= target - angleTolerance;
+            bool holding = onTarget && !overLimit && !SensorLost;
             if (holding) heldTime += Time.deltaTime;
             minAngle = Mathf.Min(minAngle, angle);
             maxAngle = Mathf.Max(maxAngle, angle);
@@ -357,7 +398,7 @@ public class WaveGameManager : MonoBehaviour
             hud.SetHold(t / hold);
             if (overLimit) hud.SetStatus("Too far!\nEase back a little", WaveHUD.Bad);
             else if (holding) hud.SetStatus("Hold it!", WaveHUD.Good);
-            else hud.SetStatus("Feet in the water!\nPull your heel back", WaveHUD.Bad);
+            else hud.SetStatus($"Feet in the water!\n{instruction}", WaveHUD.Bad);
             SetWave(reachEdge + Mathf.Sin(t * 3f) * 0.03f);
             yield return null;
         }
@@ -367,14 +408,24 @@ public class WaveGameManager : MonoBehaviour
         bool waveCleared = fraction >= clearFraction;
         wavesDone++;
         heldSum += fraction;
-        if (waveCleared) highestCleared = Mathf.Max(highestCleared, target);
+        if (straighten) straightenWaves++; else bendWaves++;
+        if (waveCleared && straighten)
+        {
+            straightenCleared++;
+            lowestStraightenCleared = lowestStraightenCleared > 0f ? Mathf.Min(lowestStraightenCleared, target) : target;
+        }
+        else if (waveCleared)
+        {
+            bendCleared++;
+            highestCleared = Mathf.Max(highestCleared, target);
+        }
         int points;
         if (waveCleared)
         {
             points = 100 + streak * 20;
             streak++;
             cleared++;
-            targetLevel = Mathf.Min(1f, targetLevel + targetLevelStep);
+            ChangeLevel(currentMovement, +targetLevelStep);
             holdSeconds = Mathf.Min(maxHoldSeconds, holdSeconds + holdSecondsStep);
             hud.SetStatus($"Wave cleared!  +{points}", WaveHUD.Good);
             Play(clearClip);
@@ -383,7 +434,7 @@ public class WaveGameManager : MonoBehaviour
         {
             points = Mathf.RoundToInt(fraction * 40f);
             streak = 0;
-            targetLevel = Mathf.Max(0f, targetLevel - targetLevelStep);
+            ChangeLevel(currentMovement, -targetLevelStep);
             hud.SetStatus(points > 0 ? $"Splash!  +{points}" : "Splash!", WaveHUD.Bad);
             Play(splashClip);
             if (splash) StartCoroutine(SplashAt(OperatedLeg.HeelPosition));
@@ -393,10 +444,11 @@ public class WaveGameManager : MonoBehaviour
         hud.SetInfo($"Wave {index}/{wavesPerSession}  ·  Score {score}  ·  Streak {streak}");
 
         logger.LogWave(index, levelUsed, target, hold, minAngle, maxAngle, fraction, waveCleared,
-                       points, score, sessionMaxAngle, safetyAlerts);
+                       points, score, sessionMaxAngle, safetyAlerts, currentMovement.ToString());
 
         // 4. Wave pulls back out to sea.
         currentTarget = -1f;
+        currentMovement = Movement.Bend;
         yield return new WaitForSeconds(resultSeconds);
         Play(backwashClip);
         for (float t = 0f; t < retreatSeconds; t += Time.deltaTime)
@@ -409,10 +461,19 @@ public class WaveGameManager : MonoBehaviour
         waveActive = false;
     }
 
-    float TargetAngle()
+    float TargetAngle(Movement move)
     {
+        if (move == Movement.Straighten)
+            return Mathf.Clamp(Mathf.Lerp(straightenEasiestAngle, straightenHardestAngle, straightenLevel), 0f, straightenEasiestAngle);
         float top = Mathf.Min(maxTargetAngle, safetyCeilingAngle - 5f);
-        return Mathf.Clamp(Mathf.Lerp(minTargetAngle, top, targetLevel), 5f, top);
+        return Mathf.Clamp(Mathf.Lerp(minTargetAngle, top, bendLevel), 5f, top);
+    }
+
+    /// <summary>Harder (+) or easier (-) for one movement only, so alternating waves keep separate difficulties.</summary>
+    void ChangeLevel(Movement move, float step)
+    {
+        if (move == Movement.Straighten) straightenLevel = Mathf.Clamp01(straightenLevel + step);
+        else bendLevel = Mathf.Clamp01(bendLevel + step);
     }
 
     /// <summary>Starts a session from code, e.g. a therapist menu button.</summary>

@@ -8,6 +8,8 @@ public class StageResult
     public WaveGameManager.Leg leg;
     public int waves, cleared, score, safetyAlerts;
     public float bestAngle, highestClearedTarget, avgHeld;
+    public int bendWaves, bendCleared, straightenWaves, straightenCleared;
+    public float bestStraighten, lowestStraightenCleared;
 
     public float ClearedFraction => waves > 0 ? (float)cleared / waves : 0f;
 }
@@ -60,7 +62,7 @@ public class ResultsPanel : MonoBehaviour
         board = leaderboard;
         mine = current;
         myRank = rank;
-        subText.text = $"Patient: {patient}   ·   {System.DateTime.Now:d MMM yyyy, HH:mm}   ·   target range {minTarget:0}°–{maxTarget:0}°";
+        subText.text = $"Patient: {patient}   ·   {System.DateTime.Now:d MMM yyyy, HH:mm}   ·   bend targets {minTarget:0}°–{maxTarget:0}°";
         ShowResultsView();
         IsOpen = true;
         DoctorPanel.PlaceInFront(root, 1.8f);
@@ -194,16 +196,28 @@ public class ResultsPanel : MonoBehaviour
         fill.sizeDelta = new Vector2((width - 80f) * r.ClearedFraction, 22f);
 
         float y = 26f;
-        Row(col, "Score", r.score.ToString(), Color.white, ref y, width);
-        Row(col, "Best knee bend", $"{r.bestAngle:0}°", Color.white, ref y, width);
-        Row(col, "Highest target reached", r.highestClearedTarget > 0f ? $"{r.highestClearedTarget:0}°" : "—", Color.white, ref y, width);
-        Row(col, "Hold accuracy", $"{r.avgHeld * 100f:0}%", Color.white, ref y, width);
-        Row(col, "Safety alerts", r.safetyAlerts.ToString(), r.safetyAlerts > 0 ? WaveHUD.Bad : WaveHUD.Good, ref y, width);
+        bool both = r.bendWaves > 0 && r.straightenWaves > 0;
+        float step = both ? 38f : 50f; // seven rows instead of five still fit in the card
+        Row(col, "Score", r.score.ToString(), Color.white, ref y, width, step);
+        if (r.bendWaves > 0)
+        {
+            if (both) Row(col, "Bend waves cleared", $"{r.bendCleared} / {r.bendWaves}", Color.white, ref y, width, step);
+            Row(col, "Best knee bend", $"{r.bestAngle:0}°", Color.white, ref y, width, step);
+            if (!both) Row(col, "Highest target reached", r.highestClearedTarget > 0f ? $"{r.highestClearedTarget:0}°" : "—", Color.white, ref y, width, step);
+        }
+        if (r.straightenWaves > 0)
+        {
+            if (both) Row(col, "Straighten waves cleared", $"{r.straightenCleared} / {r.straightenWaves}", Color.white, ref y, width, step);
+            Row(col, "Straightest knee", $"{r.bestStraighten:0}°", Color.white, ref y, width, step);
+            if (!both) Row(col, "Straightest target reached", r.lowestStraightenCleared > 0f ? $"{r.lowestStraightenCleared:0}°" : "—", Color.white, ref y, width, step);
+        }
+        Row(col, "Hold accuracy", $"{r.avgHeld * 100f:0}%", Color.white, ref y, width, step);
+        Row(col, "Safety alerts", r.safetyAlerts.ToString(), r.safetyAlerts > 0 ? WaveHUD.Bad : WaveHUD.Good, ref y, width, step);
     }
 
-    static void Row(RectTransform col, string label, string value, Color valueColor, ref float y, float width)
+    static void Row(RectTransform col, string label, string value, Color valueColor, ref float y, float width, float step = 50f)
     {
-        y -= 50f;
+        y -= step;
         DoctorPanel.Label(col, label, new Vector2(-width * 0.2f, y), new Vector2(width * 0.55f, 46f), 28, TextAnchor.MiddleLeft, Muted);
         DoctorPanel.Label(col, value, new Vector2(width * 0.3f, y), new Vector2(width * 0.35f, 46f), 32, TextAnchor.MiddleRight, valueColor);
     }

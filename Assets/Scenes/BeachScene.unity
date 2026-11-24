@@ -192,6 +192,7 @@ GameObject:
   - component: {fileID: 24611623}
   - component: {fileID: 24611624}
   - component: {fileID: 24611622}
+  - component: {fileID: 24611625}
   m_Layer: 0
   m_Name: SimulatedLeg (Kinect stand-in)
   m_TagString: Untagged
@@ -256,6 +257,28 @@ MonoBehaviour:
   maxAngle: 140
   jitter: 0.5
   standing: 0
+--- !u!114 &24611625
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 24611621}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 99342766ccebf6a4cb3b72fa0cdf7f81, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CameraPoseJoints
+  port: 5065
+  useLeftLeg: 0
+  lostAfterSeconds: 0.5
+  simulator: {fileID: 24611624}
+  angleCalculator: {fileID: 24611622}
+  hipJoint: {fileID: 285809542}
+  kneeJoint: {fileID: 2059828564}
+  ankleJoint: {fileID: 190842886}
+  thighLength: 0.42
+  shinLength: 0.45
 --- !u!1 &28711067
 GameObject:
   m_ObjectHideFlags: 0
@@ -2673,6 +2696,7 @@ MonoBehaviour:
   restSeconds: 2.5
   introSeconds: 10
   angleSource: {fileID: 24611622}
+  cameraSensor: {fileID: 24611625}
   leftLeg: {fileID: 294058919}
   rightLeg: {fileID: 649403687}
   hud: {fileID: 2085454958}
