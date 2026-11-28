@@ -59,7 +59,7 @@ public class TherapistMonitor : MonoBehaviour
         targetText.text = (r.target >= 0f ? $"target {r.target:0}°" : "no target now") + $"   ·   limit {r.limit:0}°";
         string camera = !r.cameraConnected ? "camera NOT connected (simulator)"
                       : r.cameraLost ? "camera cannot see the leg" : "camera connected";
-        infoText.text = $"{r.progress}   ·   safety alerts {r.alerts}\n{camera}";
+        infoText.text = $"{r.progress}\nalerts {r.alerts}  ·  {camera}";
         Draw(r);
     }
 
