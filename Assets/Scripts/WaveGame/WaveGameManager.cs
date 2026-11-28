@@ -304,7 +304,7 @@ public class WaveGameManager : MonoBehaviour
         foreach (var r in results) Add(r.leg, r.waves, r.cleared, r.safetyAlerts, r.score, r.bestAngle);
         if (logger != null) Add(operatedLeg, wavesDone, cleared, safetyAlerts, score, sessionMaxAngle); // leg in progress
         AddExtension(ref extras);
-        extras.stoppedEarly = true;
+        extras.stoppedEarly = done < extras.planned;
         extras.done = done;
         extras.safetyAlerts = alerts;
         PatientStore.RecordSession(SessionConfig.PatientId, TrainingGame.Beach, SessionConfig.Stage, total,

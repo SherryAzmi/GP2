@@ -818,6 +818,7 @@ public class MainMenu : MonoBehaviour
     {
         var title = Box("LogTitle", page, new Vector2(0, CH / 2f - 40f), new Vector2(CW, 80f), HeaderCol, 0.8f).transform;
         logTitle = Lbl(title, "", Vector2.zero, new Vector2(CW - 60f, 60f), 34, Color.white, true);
+        Button(title, "REPORT", new Vector2(CW / 2f - 370f, 0f), new Vector2(220f, 56f), Blue, Color.white, PrintReport, 22);
         Button(title, "EXPORT CSV", new Vector2(CW / 2f - 130f, 0f), new Vector2(220f, 56f), Green, Color.white, ExportSessions, 22);
         var sec = SectionBox(page, "EVERY SESSION  ·  click a row for pain and notes  ·  newest first", new Vector2(0, -50f), new Vector2(CW, 780f));
         logTable = UIStyle.Rect("Table", sec, new Vector2(0, -20f), new Vector2(CW - 40f, 715f));
@@ -878,6 +879,46 @@ public class MainMenu : MonoBehaviour
         catch (System.Exception ex)
         {
             logTitle.text = "Could not save the file: " + ex.Message;
+            UISound.Error();
+        }
+    }
+
+    /// <summary>A one-page summary opened in the browser, for printing or saving as PDF.</summary>
+    void PrintReport()
+    {
+        if (selected == null) return;
+        var p = selected;
+        string H(string s) => (s ?? "").Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<!doctype html><meta charset='utf-8'><title>Knee rehab report</title>");
+        sb.Append("<style>body{font-family:Segoe UI,Arial;margin:24px}table{border-collapse:collapse;width:100%;font-size:13px}")
+          .Append("td,th{border:1px solid #999;padding:4px 8px;text-align:left}</style>");
+        sb.Append($"<h1>{H(p.name)}</h1><p>{H(p.operatedLeg)} knee &middot; {H(Empty(p.surgeryType))} &middot; surgery {H(Empty(p.surgeryDate))}");
+        if (p.WeeksSinceSurgery >= 0) sb.Append($" (week {p.WeeksSinceSurgery})");
+        sb.Append($"<br>Therapist: {H(Empty(p.therapist))} &middot; comfortable max {p.comfortableMaxAngle:0}&deg; &middot; ")
+          .Append($"safety limit {p.SafetyLimit:0}&deg; &middot; straightening goal {p.extensionGoal:0}&deg;</p>");
+        sb.Append("<table><tr><th>Date</th><th>Game</th><th>Stage</th><th>Done</th><th>Success</th><th>Best bend</th>")
+          .Append("<th>Straightest</th><th>Alerts</th><th>Pain</th><th>Note</th></tr>");
+        foreach (var e in p.history)
+            sb.Append($"<tr><td>{DateTimeText(e.date)}</td><td>{GameName(e.game)}</td><td>{e.stage}</td>")
+              .Append($"<td>{(e.planned > 0 ? $"{e.done}/{e.planned}" : "-")}{(e.stoppedEarly ? " stopped" : "")}</td>")
+              .Append($"<td>{e.percent}%{(e.easier ? " eased" : "")}</td><td>{e.bestAngle:0}&deg;</td>")
+              .Append($"<td>{(e.hasExtension ? $"{e.bestExtension:0}&deg;" : "-")}</td><td>{e.safetyAlerts}</td>")
+              .Append($"<td>{(e.hasPain ? e.pain.ToString() : "-")}</td><td>{H(e.note)}</td></tr>");
+        sb.Append("</table><p>Angles are camera estimates, not goniometer measurements.</p>");
+        try
+        {
+            string folder = System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments), "KneeRehabReports");
+            System.IO.Directory.CreateDirectory(folder);
+            string file = System.IO.Path.Combine(folder, $"report_{p.id}_{System.DateTime.Now:yyyyMMdd_HHmmss}.html");
+            System.IO.File.WriteAllText(file, sb.ToString(), new System.Text.UTF8Encoding(true));
+            logTitle.text = "Saved: " + file;
+            Application.OpenURL(new System.Uri(file).AbsoluteUri);
+            UISound.Confirm();
+        }
+        catch (System.Exception ex)
+        {
+            logTitle.text = "Could not save the report: " + ex.Message;
             UISound.Error();
         }
     }

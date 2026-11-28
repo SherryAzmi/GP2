@@ -80,6 +80,7 @@ public class SessionControls : MonoBehaviour
         var button = rt.gameObject.AddComponent<Button>();
         button.targetGraphic = rt.GetComponent<Image>();
         button.onClick.AddListener(onClick);
+        button.onClick.AddListener(() => EventSystem.current?.SetSelectedGameObject(null));
         return DoctorPanel.Label(rt, label, Vector2.zero, new Vector2(260f, 76f), 28, TextAnchor.MiddleCenter, Color.white);
     }
 }

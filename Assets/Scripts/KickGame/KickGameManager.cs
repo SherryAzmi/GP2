@@ -217,7 +217,7 @@ public class KickGameManager : MonoBehaviour
         if (!recordOpen || !SessionConfig.Active || SessionConfig.Game != TrainingGame.Football) return;
         recordOpen = false;
         var extras = SessionExtrasNow();
-        extras.stoppedEarly = true;
+        extras.stoppedEarly = peakCount < kicksPerSession;
         PatientStore.RecordSession(SessionConfig.PatientId, TrainingGame.Football, SessionConfig.Stage, score,
                                    peakCount > 0 ? (float)goals / peakCount : 0f, sessionMaxAngle, extras, out _);
     }
