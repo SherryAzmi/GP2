@@ -8893,6 +8893,7 @@ MonoBehaviour:
   flightSeconds: 1
   resultSeconds: 1.5
   restSeconds: 2
+  useDoctorPanel: 1
   angleSource: {fileID: 480744350}
   cameraSensor: {fileID: 480744353}
   hud: {fileID: 1133205137}
@@ -8908,6 +8909,7 @@ MonoBehaviour:
   supportRail: {fileID: 634029638}
   targetColor: {r: 0.3, g: 0.85, b: 1, a: 1}
   crowd: {fileID: 461576853}
+  fireworks: {fileID: 1702854327}
   kickSound: {fileID: 0}
   netSound: {fileID: 0}
   whistleSound: {fileID: 0}
@@ -8928,6 +8930,7 @@ Transform:
   - {fileID: 480744351}
   - {fileID: 1133205138}
   - {fileID: 461576854}
+  - {fileID: 1702854328}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1439316688
@@ -10654,6 +10657,58 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 2087337026}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1702854326
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1702854328}
+  - component: {fileID: 1702854327}
+  m_Layer: 0
+  m_Name: Fireworks
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1702854327
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1702854326}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e8b69eb9ae148a74ea7762a882cae85c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Fireworks
+  sparkMaterial: {fileID: 2100000, guid: f3f81aaf3843ce04cbc859ab1ffa29c8, type: 2}
+  launchCenter: {x: 0, y: 0.5, z: -11}
+  launchWidth: 18
+  burstHeight: {x: 8.5, y: 12.5}
+  baseRockets: 3
+  maxRockets: 5
+  sparks: 140
+  volume: 0.8
+--- !u!4 &1702854328
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1702854326}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0.5, z: -11}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1433304584}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1729169353
 GameObject:

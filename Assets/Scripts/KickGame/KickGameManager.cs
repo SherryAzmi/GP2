@@ -72,6 +72,8 @@ public class KickGameManager : MonoBehaviour
     public Color targetColor = new Color(0.3f, 0.85f, 1f);
     [Tooltip("Spectators in the stand; found automatically when left empty")]
     public StadiumCrowd crowd;
+    [Tooltip("Fireworks behind the stand on every goal; found automatically when left empty")]
+    public Fireworks fireworks;
 
     [Header("Sounds (empty = generated)")]
     public AudioClip kickSound;
@@ -124,6 +126,7 @@ public class KickGameManager : MonoBehaviour
         if (cameraSensor) cameraSensor.useLeftLeg = operatedLeg == Leg.Left;
         block = new MaterialPropertyBlock();
         if (!crowd) crowd = FindFirstObjectByType<StadiumCrowd>();
+        if (!fireworks) fireworks = FindFirstObjectByType<Fireworks>();
         hud.ApplyTheme(UIStyle.Theme.Football);
         SetupAudio();
         if (useDoctorPanel) panel = FootballSetupPanel.Create(this);
@@ -471,6 +474,7 @@ public class KickGameManager : MonoBehaviour
             Play(netClip);
             Play(goalClip);
             crowd?.Cheer();
+            if (fireworks) fireworks.Celebrate(streak); // more rockets for goals in a row
             hud.Popup("GOAL!", streak >= 2 ? $"+{points}   ·   {streak} in a row!" : $"+{points}", WaveHUD.Good, 2f);
             hud.SetStatus($"Goal!  +{points}", WaveHUD.Good);
         }
