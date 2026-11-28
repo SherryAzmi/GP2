@@ -104,6 +104,14 @@ public class KickGameManager : MonoBehaviour
     FootballSetupPanel panel;
     float sessionMinExtension = float.MaxValue; // straightest knee reached in a kick
     SessionControls controls;
+    TherapistMonitor monitor;
+
+    LiveReading Live() => new LiveReading
+    {
+        angle = Angle, target = currentTarget, limit = safetyCeilingAngle, alerts = safetyAlerts,
+        cameraConnected = cameraSensor && cameraSensor.Connected, cameraLost = SensorLost,
+        progress = $"kicks done {peakCount} of {kicksPerSession}  ·  balance pauses {balancePauses}",
+    };
 
     float Angle => angleSource ? angleSource.CurrentKneeAngle : 0f;
     bool SensorLost => cameraSensor && cameraSensor.TrackingLost;
@@ -120,13 +128,16 @@ public class KickGameManager : MonoBehaviour
         SetupAudio();
         if (useDoctorPanel) panel = FootballSetupPanel.Create(this);
         controls = SessionControls.Create(transform, StopSession);
+        monitor = TherapistMonitor.Create(transform, Live);
 
         while (true)
         {
             yield return WaitForStartPress();
             controls.SetVisible(true);
+            monitor.SetVisible(true);
             yield return RunSession();
             controls.SetVisible(false);
+            monitor.SetVisible(false);
         }
     }
 

@@ -818,7 +818,8 @@ public class MainMenu : MonoBehaviour
     {
         var title = Box("LogTitle", page, new Vector2(0, CH / 2f - 40f), new Vector2(CW, 80f), HeaderCol, 0.8f).transform;
         logTitle = Lbl(title, "", Vector2.zero, new Vector2(CW - 60f, 60f), 34, Color.white, true);
-        var sec = SectionBox(page, "EVERY SESSION  ·  newest first", new Vector2(0, -50f), new Vector2(CW, 780f));
+        Button(title, "EXPORT CSV", new Vector2(CW / 2f - 130f, 0f), new Vector2(220f, 56f), Green, Color.white, ExportSessions, 22);
+        var sec = SectionBox(page, "EVERY SESSION  ·  click a row for pain and notes  ·  newest first", new Vector2(0, -50f), new Vector2(CW, 780f));
         logTable = UIStyle.Rect("Table", sec, new Vector2(0, -20f), new Vector2(CW - 40f, 715f));
     }
 
@@ -847,6 +848,38 @@ public class MainMenu : MonoBehaviour
                                 ("Avg bend", 120f), ("Success", 250f), ("Score", 110f), ("Safety alerts", 130f),
                                 ("Straight", 130f), ("Pain", 90f) },
               rows, 44f, clicks, "No sessions yet.");
+    }
+
+    /// <summary>The selected patient's sessions as a spreadsheet file in Documents/KneeRehabReports.</summary>
+    void ExportSessions()
+    {
+        if (selected == null) return;
+        var c = CultureInfo.InvariantCulture;
+        string Q(string s) => "\"" + (s ?? "").Replace("\"", "\"\"") + "\"";
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("patient_id,date_utc,game,stage,leg,duration_s,done,planned,stopped_early,eased,success_percent,score," +
+                      "best_bend_deg,avg_bend_deg,straightest_deg,safety_alerts,balance_pauses,pain_0_10,settings,note");
+        foreach (var e in selected.history)
+            sb.AppendLine(string.Join(",", selected.id, e.date, e.game, e.stage.ToString(c), e.leg, e.durationSeconds.ToString("0", c),
+                e.done.ToString(c), e.planned.ToString(c), e.stoppedEarly ? "1" : "0", e.easier ? "1" : "0", e.percent.ToString(c),
+                e.score.ToString(c), e.bestAngle.ToString("0.0", c), e.avgAngle.ToString("0.0", c),
+                e.hasExtension ? e.bestExtension.ToString("0.0", c) : "", e.safetyAlerts.ToString(c), e.balancePauses.ToString(c),
+                e.hasPain ? e.pain.ToString(c) : "", Q(e.settings), Q(e.note)));
+        try
+        {
+            string folder = System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments), "KneeRehabReports");
+            System.IO.Directory.CreateDirectory(folder);
+            string file = System.IO.Path.Combine(folder, $"sessions_{selected.id}_{System.DateTime.Now:yyyyMMdd_HHmmss}.csv");
+            System.IO.File.WriteAllText(file, sb.ToString(), new System.Text.UTF8Encoding(true));
+            logTitle.text = "Saved: " + file;
+            Debug.Log("[Export] " + file);
+            UISound.Confirm();
+        }
+        catch (System.Exception ex)
+        {
+            logTitle.text = "Could not save the file: " + ex.Message;
+            UISound.Error();
+        }
     }
 
     // ---------------- One session: pain, note, delete ----------------

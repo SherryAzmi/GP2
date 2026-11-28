@@ -125,6 +125,14 @@ public class WaveGameManager : MonoBehaviour
     SessionLogger logger;
     bool recordOpen;  // a session has started and is not yet in the patient's history
     SessionControls controls;
+    TherapistMonitor monitor;
+
+    LiveReading Live() => new LiveReading
+    {
+        angle = Angle, target = currentTarget, limit = safetyCeilingAngle, alerts = safetyAlerts,
+        cameraConnected = cameraSensor && cameraSensor.Connected, cameraLost = SensorLost,
+        progress = $"{operatedLeg} leg  ·  waves done {wavesDone} of {wavesPerSession}",
+    };
 
     VirtualLegPose OperatedLeg => operatedLeg == Leg.Left ? leftLeg : rightLeg;
     float Angle => angleSource ? angleSource.CurrentKneeAngle : 0f;
@@ -405,6 +413,8 @@ public class WaveGameManager : MonoBehaviour
         recordOpen = true;
         if (!controls) controls = SessionControls.Create(transform, StopSession);
         controls.SetVisible(true);
+        if (!monitor) monitor = TherapistMonitor.Create(transform, Live);
+        monitor.SetVisible(true);
 
         for (int s = 0; s < stages.Length; s++)
         {
@@ -457,6 +467,7 @@ public class WaveGameManager : MonoBehaviour
         }
 
         controls.SetVisible(false);
+        monitor.SetVisible(false);
         hud.Popup("SESSION DONE!", $"{totalCleared} / {totalWaves} waves cleared", WaveHUD.Accent, 2.2f);
         yield return new WaitForSeconds(2.5f);
         if (unlocked)
