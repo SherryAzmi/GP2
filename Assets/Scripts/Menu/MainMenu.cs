@@ -82,6 +82,66 @@ public class MainMenu : MonoBehaviour
 
     // ================= Navigation =================
 
+    RectTransform checkUpBox;
+
+    void Choose(bool doctor)
+    {
+        SessionConfig.DoctorWearsHeadset = doctor;
+        AskPin();
+    }
+
+    // ---------------- Optional PIN ----------------
+    // Keeps patients and visitors out of the dashboard. It does not encrypt the files on this PC.
+    const string PinKey = "GP2.Pin";
+    RectTransform pinBox;
+    InputField pinEntry;
+
+    static string Hash(string pin)
+    {
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        return System.Convert.ToBase64String(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes("gp2:" + pin)));
+    }
+
+    void AskPin()
+    {
+        if (PlayerPrefs.GetString(PinKey, "").Length == 0) { ShowDashboard(); return; }
+        if (!pinBox)
+        {
+            pinBox = SectionBox(titleScreen, "THERAPIST PIN", Vector2.zero, new Vector2(620f, 320f));
+            pinBox.GetComponent<Image>().color = CardCol;
+            pinBox.GetComponent<Image>().raycastTarget = true;
+            pinEntry = Field(pinBox, new Vector2(0, 40f), 300f, "PIN", InputField.ContentType.Pin);
+            Button(pinBox, "OPEN", new Vector2(130f, -80f), new Vector2(220f, 66f), Green, Color.white, CheckPin, 26);
+            Button(pinBox, "CANCEL", new Vector2(-130f, -80f), new Vector2(220f, 66f), Off, Color.white,
+                   () => pinBox.gameObject.SetActive(false), 26);
+        }
+        pinEntry.text = "";
+        pinBox.gameObject.SetActive(true);
+        pinBox.SetAsLastSibling();
+        pinEntry.ActivateInputField();
+    }
+
+    void CheckPin()
+    {
+        if (Hash(pinEntry.text) != PlayerPrefs.GetString(PinKey, "")) { pinEntry.text = ""; UISound.Error(); return; }
+        pinBox.gameObject.SetActive(false);
+        ShowDashboard();
+    }
+
+    InputField newPin;
+    Text pinState;
+
+    void SavePin()
+    {
+        string pin = newPin.text.Trim();
+        if (pin.Length > 0 && pin.Length < 4) { pinState.text = "Use at least 4 digits."; UISound.Error(); return; }
+        if (pin.Length == 0) PlayerPrefs.DeleteKey(PinKey); else PlayerPrefs.SetString(PinKey, Hash(pin));
+        PlayerPrefs.Save();
+        newPin.text = "";
+        pinState.text = pin.Length == 0 ? "PIN removed." : "PIN saved. It is asked at the START screen.";
+        UISound.Confirm();
+    }
+
     void ShowDashboard()
     {
         titleScreen.gameObject.SetActive(false);
@@ -193,10 +253,14 @@ public class MainMenu : MonoBehaviour
         Lbl(games, "PENALTY PRACTICE", new Vector2(230f, -5f), new Vector2(420f, 44f), 34, PitchLine, true);
         Lbl(games, "Standing  ·  wind up and kick", new Vector2(230f, -42f), new Vector2(420f, 30f), 21, Muted);
 
-        var start = Button(card, "START", new Vector2(0, -150f), new Vector2(520f, 120f), Green, Color.white, ShowDashboard, 64);
-        start.gameObject.AddComponent<Pulse>();
+        // The first choice of every run: who puts on the headset (only one is connected to this PC).
+        Lbl(card, "WHO WILL WEAR THE HEADSET?", new Vector2(0, -75f), new Vector2(900f, 40f), 30, Gold, true);
+        Button(card, "PATIENT", new Vector2(-250f, -165f), new Vector2(460f, 110f), Green, Color.white, () => Choose(false), 48);
+        Button(card, "DOCTOR", new Vector2(250f, -165f), new Vector2(460f, 110f), Blue, Color.white, () => Choose(true), 48);
+        Lbl(card, "training games", new Vector2(-250f, -240f), new Vector2(460f, 30f), 20, Muted);
+        Lbl(card, "AR check-up of the knee", new Vector2(250f, -240f), new Vector2(460f, 30f), 20, Muted);
         Lbl(card, System.DateTime.Now.ToString("dddd d MMMM yyyy", CultureInfo.InvariantCulture) + "   ·   use the mouse",
-             new Vector2(0, -290f), new Vector2(1000f, 34f), 22, Muted);
+             new Vector2(0, -305f), new Vector2(1000f, 34f), 22, Muted);
     }
 
     void BuildDashboard()
@@ -432,7 +496,7 @@ public class MainMenu : MonoBehaviour
             $"<color=#FFD94A>Therapist</color>   {Empty(p.therapist)}   ·   <color=#FFD94A>Phone</color>   {Empty(p.phone)}\n" +
             $"<color=#FFD94A>Height / weight</color>   " + (p.heightCm <= 0 && p.weightKg <= 0 ? "not set"
                 : $"{(p.heightCm > 0 ? $"{p.heightCm:0} cm" : "-")}   ·   {(p.weightKg > 0 ? $"{p.weightKg:0.#} kg" : "-")}{bmi}") + "\n" +
-            $"<color=#FFD94A>Comfortable max bend</color>   {p.comfortableMaxAngle:0}°\n" +
+            $"<color=#FFD94A>Comfortable max bend</color>   {p.comfortableMaxAngle:0}°   ·   limit {p.SafetyLimit:0}°   ·   straighten to {p.extensionGoal:0}°\n" +
             $"<color=#FFD94A>Notes</color>   {Empty(p.notes)}";
 
         var h = p.history;
@@ -501,12 +565,16 @@ public class MainMenu : MonoBehaviour
 
         var training = SectionBox(page, "TRAINING", new Vector2(0, -183f), new Vector2(CW, 200f));
         fMax = FormRow(training, "Comfortable max bend (°)", 25f, 140f, InputField.ContentType.DecimalNumber, "90", 380f);
-        Lbl(training, "Largest bend without pain. Stage targets scale from it (safety limit 110°).",
-            new Vector2(330f, 25f), new Vector2(800f, 50f), 20, Muted, false, TextAnchor.MiddleLeft);
+        Lbl(training, "Safety limit (°)", new Vector2(-65f, 25f), new Vector2(220f, 50f), 26, Color.white, false, TextAnchor.MiddleLeft);
+        fLimit = Field(training, new Vector2(110f, 25f), 120f, "110", InputField.ContentType.DecimalNumber);
+        Lbl(training, "Straightening goal (°)", new Vector2(345f, 25f), new Vector2(290f, 50f), 26, Color.white, false, TextAnchor.MiddleLeft);
+        fGoal = Field(training, new Vector2(570f, 25f), 120f, "0", InputField.ContentType.DecimalNumber);
         fNotes = FormRow(training, "Notes", -50f, 1080f, InputField.ContentType.Standard, "Pain, walker, precautions...", 380f);
 
         formNote = Lbl(page, "", new Vector2(0, -310f), new Vector2(CW, 34f), 24, WaveHUD.Bad, true);
         Button(page, "CANCEL", new Vector2(-200f, -380f), new Vector2(240f, 70f), Off, Color.white, () => Show(formIsNew ? Page.Patients : Page.PatientFile), 26);
+        sprayButton = Button(page, "", new Vector2(-560f, -380f), new Vector2(340f, 70f), Off, Color.white, () => SetSpray(!sprayChoice), 20);
+        deleteButton = Button(page, "DELETE PATIENT", new Vector2(600f, -380f), new Vector2(260f, 70f), Off, Color.white, DeletePatient, 22);
         formSave = Button(page, "CREATE PATIENT", new Vector2(110f, -380f), new Vector2(340f, 70f), Green, Color.white, SubmitForm, 28).GetComponentInChildren<Text>();
     }
 
@@ -536,10 +604,43 @@ public class MainMenu : MonoBehaviour
         fTherapist.text = p != null ? p.therapist : PlayerPrefs.GetString(TherapistKey, "");
         fMax.text = p != null ? p.comfortableMaxAngle.ToString("0", CultureInfo.InvariantCulture) : "90";
         fNotes.text = p?.notes ?? "";
+        fLimit.text = (p != null ? p.SafetyLimit : PatientRecord.DefaultSafetyLimit).ToString("0", CultureInfo.InvariantCulture);
+        fGoal.text = (p != null ? p.extensionGoal : 0f).ToString("0", CultureInfo.InvariantCulture);
+        deleteArmed = false;
+        SetSpray(p != null && p.sprayAllowed);
+        deleteButton.gameObject.SetActive(!isNew);
         SetLeg(p != null ? p.operatedLeg : "Right");
         Show(Page.Form);
         fName.Select();
         fName.ActivateInputField();
+    }
+
+    InputField fLimit, fGoal;
+    Image sprayButton;
+    bool sprayChoice;
+
+    void SetSpray(bool value)
+    {
+        sprayChoice = value;
+        sprayButton.color = value ? Blue : Off;
+        sprayButton.GetComponentInChildren<Text>().text = value ? "WATER SPRAY: ON (wound healed)" : "WATER SPRAY: OFF";
+    }
+    Image deleteButton;
+    bool deleteArmed;
+
+    // Two clicks: the first only asks.
+    void DeletePatient()
+    {
+        if (!deleteArmed)
+        {
+            deleteArmed = true;
+            formNote.text = $"Click DELETE again to remove {selected.name} and all their history.";
+            return;
+        }
+        PatientStore.Delete(selected);
+        if (SessionConfig.PatientId == selected.id) SessionConfig.PatientId = null;
+        SelectPatient(null);
+        Show(Page.Patients);
     }
 
     void SetLeg(string leg)
@@ -553,7 +654,10 @@ public class MainMenu : MonoBehaviour
     {
         float max = ParseF(fMax.text), height = ParseF(fHeight.text), weight = ParseF(fWeight.text);
         int.TryParse(fAge.text, out int age);
+        float limit = ParseF(fLimit.text), goal = ParseF(fGoal.text);
         string error = string.IsNullOrWhiteSpace(fName.text) ? "Enter the patient's name."
+                     : limit < 40f || limit > 110f ? "Safety limit must be between 40° and 110°."
+                     : goal < 0f || goal > 40f ? "Straightening goal must be between 0° and 40°."
                      : max < 20f || max > 140f ? "Comfortable max bend must be between 20° and 140°."
                      : age < 0 || age > 120 ? "Check the age."
                      : (height != 0f && (height < 50f || height > 250f)) ? "Height should be in centimetres (50–250)."
@@ -575,6 +679,9 @@ public class MainMenu : MonoBehaviour
         p.surgeryDate = fDate.text.Trim();
         p.therapist = fTherapist.text.Trim();
         p.comfortableMaxAngle = max;
+        p.safetyLimit = limit;
+        p.extensionGoal = goal;
+        p.sprayAllowed = sprayChoice;
         p.notes = fNotes.text.Trim();
         p.operatedLeg = legChoice;
         PatientStore.Save();
@@ -674,6 +781,25 @@ public class MainMenu : MonoBehaviour
         startTitle.text = $"START SESSION  ·  {selected.name}  ·  {selected.operatedLeg} knee  ·  comfortable max {selected.comfortableMaxAngle:0}°";
         RefreshCard(beachCard);
         RefreshCard(footballCard);
+
+        if (!checkUpBox)
+        {
+            var page = pages[Page.Start];
+            checkUpBox = SectionBox(page, "THE DOCTOR WEARS THE HEADSET", new Vector2(0, -45f), new Vector2(CW, 760f));
+            checkUpBox.GetComponent<Image>().color = CardCol;
+            checkUpBox.GetComponent<Image>().raycastTarget = true;
+            Lbl(checkUpBox, "AR check-up: you see the real room with the patient's live knee angle, a graph and a bone overlay.\n" +
+                "Hold the right trigger to move the overlay onto the knee. The patient moves the leg; there is no game.\n" +
+                "End with STOP & SAVE or Esc. To play the games, press EXIT and choose PATIENT.",
+                new Vector2(0, 130f), new Vector2(CW - 100f, 150f), 26, Color.white);
+            Button(checkUpBox, "START  AR CHECK-UP", new Vector2(0, -80f), new Vector2(560f, 100f), Green, Color.white, () =>
+            {
+                UISound.Confirm();
+                SessionConfig.LaunchCheckUp(selected);
+            }, 36);
+        }
+        checkUpBox.gameObject.SetActive(SessionConfig.DoctorWearsHeadset);
+        checkUpBox.SetAsLastSibling();
     }
 
     void RefreshCard(Card c)
@@ -731,7 +857,7 @@ public class MainMenu : MonoBehaviour
     void BuildProgress(RectTransform page)
     {
         progressKpis = KpiRow(page, CH / 2f - 60f, new[] { "First session best bend", "Best bend so far", "Improvement", "Success: first → latest" });
-        var a = SectionBox(page, "KNEE BEND OVER TIME  ·  best angle per session", new Vector2(0, 100f), new Vector2(CW, 380f));
+        var a = SectionBox(page, "KNEE BEND AND STRAIGHTENING OVER TIME  ·  straightest: closer to 0° is better", new Vector2(0, 100f), new Vector2(CW, 380f));
         angleChart = UIStyle.Rect("Chart", a, new Vector2(0, -15f), new Vector2(CW - 60f, 320f));
         var s = SectionBox(page, "SCORE OVER TIME", new Vector2(-CW / 4f - 5f, -268f), new Vector2(CW / 2f - 10f, 345f));
         scoreChart = UIStyle.Rect("Chart", s, new Vector2(0, -15f), new Vector2(CW / 2f - 60f, 285f));
@@ -751,13 +877,15 @@ public class MainMenu : MonoBehaviour
         {
             labels.Add(ShortDate(e.date));
             bool b = e.game == "Beach";
-            beachA.Add(b ? e.bestAngle : -1f); footA.Add(b ? -1f : e.bestAngle);
-            beachS.Add(b ? e.score : -1f); footS.Add(b ? -1f : e.score);
+            beachA.Add(b ? e.bestAngle : -1f); footA.Add(e.game == "Football" ? e.bestAngle : -1f);
+            beachS.Add(b ? e.score : -1f); footS.Add(e.game == "Football" ? e.score : -1f);
             float l = e.bestLeft, r = e.bestRight;
             if (l <= 0f && r <= 0f) { string leg = string.IsNullOrEmpty(e.leg) ? selected.operatedLeg : e.leg; if (leg == "Left") l = e.bestAngle; else if (leg == "Right") r = e.bestAngle; } // older records
             left.Add(l > 0f ? l : -1f); right.Add(r > 0f ? r : -1f);
         }
-        LineChart(angleChart, new[] { ("Beach waves", SeaLine, beachA), ("Penalty practice", PitchLine, footA) }, labels, "°", 0f, -1f, "No sessions yet.");
+        var straight = new List<float>();
+        foreach (var e in h) straight.Add(e.hasExtension ? e.bestExtension : -1f);
+        LineChart(angleChart, new[] { ("Beach bend", SeaLine, beachA), ("Penalty bend", PitchLine, footA), ("Straightest", Gold, straight) }, labels, "°", 0f, -1f, "No sessions yet.");
         LineChart(scoreChart, new[] { ("Beach waves", SeaLine, beachS), ("Penalty practice", PitchLine, footS) }, labels, "", 0f, -1f, "No sessions yet.");
         LineChart(legChart, new[] { ("Left leg", Gold, left), ("Right leg", new Color(1f, 0.45f, 0.45f), right) }, labels, "°", 0f, -1f, "No sessions yet.");
         legNote.text = selected.IsLeftLeg ? "Operated: left knee. Train 'Both' in Beach Waves to compare with the healthy leg."
@@ -784,8 +912,10 @@ public class MainMenu : MonoBehaviour
     void BuildLog(RectTransform page)
     {
         var title = Box("LogTitle", page, new Vector2(0, CH / 2f - 40f), new Vector2(CW, 80f), HeaderCol, 0.8f).transform;
-        logTitle = Lbl(title, "", Vector2.zero, new Vector2(CW - 60f, 60f), 34, Color.white, true);
-        var sec = SectionBox(page, "EVERY SESSION  ·  newest first", new Vector2(0, -50f), new Vector2(CW, 780f));
+        logTitle = Lbl(title, "", new Vector2(-240f, 0f), new Vector2(CW - 540f, 70f), 28, Color.white, true, TextAnchor.MiddleLeft);
+        Button(title, "REPORT", new Vector2(CW / 2f - 370f, 0f), new Vector2(220f, 56f), Blue, Color.white, PrintReport, 22);
+        Button(title, "EXPORT CSV", new Vector2(CW / 2f - 130f, 0f), new Vector2(220f, 56f), Green, Color.white, ExportSessions, 22);
+        var sec = SectionBox(page, "EVERY SESSION  ·  click a row for pain and notes  ·  newest first", new Vector2(0, -50f), new Vector2(CW, 780f));
         logTable = UIStyle.Rect("Table", sec, new Vector2(0, -20f), new Vector2(CW - 40f, 715f));
     }
 
@@ -795,6 +925,8 @@ public class MainMenu : MonoBehaviour
         float minutes = selected.TotalMinutes;
         logTitle.text = $"SESSION LOG  ·  {selected.name}  ·  {h.Count} session{(h.Count == 1 ? "" : "s")}  ·  {minutes:0} min in total";
         var rows = new List<string[]>();
+        var clicks = new List<UnityEngine.Events.UnityAction>();
+        CloseSession();
         for (int i = h.Count - 1; i >= 0; i--)
         {
             var e = h[i];
@@ -803,11 +935,224 @@ public class MainMenu : MonoBehaviour
                 DateTimeText(e.date), GameName(e.game), "S" + e.stage, e.leg ?? "-", Duration(e.durationSeconds),
                 $"{e.bestAngle:0}°", e.avgAngle > 0 ? $"{e.avgAngle:0}°" : "-", SuccessText(e), e.score.ToString(),
                 e.safetyAlerts > 0 ? $"<color=#FF7A66>{e.safetyAlerts}</color>" : "0",
+                e.hasExtension ? $"{e.bestExtension:0}°" : "-", e.hasPain ? $"{e.pain}/10" : "-",
             });
+            var entry = e;
+            clicks.Add(() => OpenSession(entry));
         }
         Table(logTable, new[] { ("Date", 200f), ("Game", 200f), ("Stage", 90f), ("Leg", 100f), ("Time", 110f), ("Best bend", 130f),
-                                ("Avg bend", 120f), ("Success", 250f), ("Score", 110f), ("Safety alerts", 130f) },
-              rows, 44f, null, "No sessions yet.");
+                                ("Avg bend", 120f), ("Success", 250f), ("Score", 110f), ("Safety alerts", 130f),
+                                ("Straight", 130f), ("Pain", 90f) },
+              rows, 44f, clicks, "No sessions yet.");
+    }
+
+    /// <summary>The selected patient's sessions as a spreadsheet file in Documents/KneeRehabReports.</summary>
+    void ExportSessions()
+    {
+        if (selected == null) return;
+        var c = CultureInfo.InvariantCulture;
+        string Q(string s) => "\"" + (s ?? "").Replace("\"", "\"\"") + "\"";
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("patient_id,date_utc,game,stage,leg,duration_s,done,planned,stopped_early,eased,success_percent,score," +
+                      "best_bend_deg,avg_bend_deg,straightest_deg,safety_alerts,balance_pauses,pain_0_10,settings,note");
+        foreach (var e in selected.history)
+            sb.AppendLine(string.Join(",", selected.id, e.date, e.game, e.stage.ToString(c), e.leg, e.durationSeconds.ToString("0", c),
+                e.done.ToString(c), e.planned.ToString(c), e.stoppedEarly ? "1" : "0", e.easier ? "1" : "0", e.percent.ToString(c),
+                e.score.ToString(c), e.bestAngle.ToString("0.0", c), e.avgAngle.ToString("0.0", c),
+                e.hasExtension ? e.bestExtension.ToString("0.0", c) : "", e.safetyAlerts.ToString(c), e.balancePauses.ToString(c),
+                e.hasPain ? e.pain.ToString(c) : "", Q(e.settings), Q(e.note)));
+        try
+        {
+            string folder = System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments), "KneeRehabReports");
+            System.IO.Directory.CreateDirectory(folder);
+            string file = System.IO.Path.Combine(folder, $"sessions_{selected.id}_{System.DateTime.Now:yyyyMMdd_HHmmss}.csv");
+            System.IO.File.WriteAllText(file, sb.ToString(), new System.Text.UTF8Encoding(true));
+            logTitle.text = "Saved: " + file;
+            Debug.Log("[Export] " + file);
+            UISound.Confirm();
+        }
+        catch (System.Exception ex)
+        {
+            logTitle.text = "Could not save the file: " + ex.Message;
+            UISound.Error();
+        }
+    }
+
+    /// <summary>A one-page summary opened in the browser, for printing or saving as PDF.</summary>
+    void PrintReport()
+    {
+        if (selected == null) return;
+        var p = selected;
+        string H(string s) => (s ?? "").Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<!doctype html><meta charset='utf-8'><title>Knee rehab report</title>");
+        sb.Append("<style>body{font-family:Segoe UI,Arial;margin:24px}table{border-collapse:collapse;width:100%;font-size:13px}")
+          .Append("td,th{border:1px solid #999;padding:4px 8px;text-align:left}</style>");
+        sb.Append($"<h1>{H(p.name)}</h1><p>{H(p.operatedLeg)} knee &middot; {H(Empty(p.surgeryType))} &middot; surgery {H(Empty(p.surgeryDate))}");
+        if (p.WeeksSinceSurgery >= 0) sb.Append($" (week {p.WeeksSinceSurgery})");
+        sb.Append($"<br>Therapist: {H(Empty(p.therapist))} &middot; comfortable max {p.comfortableMaxAngle:0}&deg; &middot; ")
+          .Append($"safety limit {p.SafetyLimit:0}&deg; &middot; straightening goal {p.extensionGoal:0}&deg;</p>");
+        sb.Append("<table><tr><th>Date</th><th>Game</th><th>Stage</th><th>Done</th><th>Success</th><th>Best bend</th>")
+          .Append("<th>Straightest</th><th>Alerts</th><th>Pain</th><th>Note</th></tr>");
+        foreach (var e in p.history)
+            sb.Append($"<tr><td>{DateTimeText(e.date)}</td><td>{GameName(e.game)}</td><td>{e.stage}</td>")
+              .Append($"<td>{(e.planned > 0 ? $"{e.done}/{e.planned}" : "-")}{(e.stoppedEarly ? " stopped" : "")}</td>")
+              .Append($"<td>{e.percent}%{(e.easier ? " eased" : "")}</td><td>{e.bestAngle:0}&deg;</td>")
+              .Append($"<td>{(e.hasExtension ? $"{e.bestExtension:0}&deg;" : "-")}</td><td>{e.safetyAlerts}</td>")
+              .Append($"<td>{(e.hasPain ? e.pain.ToString() : "-")}</td><td>{H(e.note)}</td></tr>");
+        sb.Append("</table><p>Angles are camera estimates, not goniometer measurements.</p>");
+        try
+        {
+            string folder = System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments), "KneeRehabReports");
+            System.IO.Directory.CreateDirectory(folder);
+            string file = System.IO.Path.Combine(folder, $"report_{p.id}_{System.DateTime.Now:yyyyMMdd_HHmmss}.html");
+            System.IO.File.WriteAllText(file, sb.ToString(), new System.Text.UTF8Encoding(true));
+            logTitle.text = "Saved: " + file;
+            Application.OpenURL(new System.Uri(file).AbsoluteUri);
+            UISound.Confirm();
+        }
+        catch (System.Exception ex)
+        {
+            logTitle.text = "Could not save the report: " + ex.Message;
+            UISound.Error();
+        }
+    }
+
+    // ---------------- One session: pain, note, delete ----------------
+
+    RectTransform sessionEditor;
+    InputField noteField;
+    SessionEntry editing;
+    readonly Image[] painButtons = new Image[11];
+    Text editorInfo;
+    int painChoice = -1;
+    bool removeArmed;
+
+    void OpenSession(SessionEntry e)
+    {
+        if (!sessionEditor) BuildSessionEditor();
+        editing = e;
+        removeArmed = false;
+        painChoice = e.hasPain ? e.pain : -1;
+        PaintPain();
+        noteField.text = e.note ?? "";
+        DrawAngles(e);
+        editorInfo.text = $"{DateTimeText(e.date)}  ·  {GameName(e.game)}  ·  stage {e.stage}\n{e.settings}";
+        sessionEditor.gameObject.SetActive(true);
+        sessionEditor.SetAsLastSibling();
+    }
+
+    void CloseSession()
+    {
+        if (sessionEditor) sessionEditor.gameObject.SetActive(false);
+    }
+
+    RawImage angleGraph;
+    Text graphInfo;
+    Texture2D angleTexture;
+
+    /// <summary>The whole session's knee angle (blue) and target (yellow), 0 to 140 degrees.</summary>
+    void DrawAngles(SessionEntry e)
+    {
+        const int W = 1000, H = 200;
+        if (!angleTexture) angleTexture = new Texture2D(W, H, TextureFormat.RGBA32, false);
+        var pixels = new Color32[W * H];
+        var back = new Color32(2, 15, 31, 255);
+        for (int i = 0; i < pixels.Length; i++) pixels[i] = back;
+        for (int d = 0; d <= 120; d += 30) // grid every 30 degrees
+        {
+            int y = Mathf.RoundToInt(d / 140f * (H - 1));
+            for (int x = 0; x < W; x += 3) pixels[y * W + x] = new Color32(70, 90, 115, 255);
+        }
+
+        var rows = new List<string[]>();
+        try
+        {
+            if (!string.IsNullOrEmpty(e.angleFile))
+            {
+                string file = System.IO.Path.Combine(Application.persistentDataPath, "Sessions", e.angleFile);
+                if (System.IO.File.Exists(file))
+                    foreach (var line in System.IO.File.ReadAllLines(file)) rows.Add(line.Split(','));
+            }
+        }
+        catch (System.IO.IOException ex) { Debug.LogWarning("[Angles] " + ex.Message); }
+
+        bool camera = false;
+        float low = float.MaxValue, high = float.MinValue;
+        int count = rows.Count - 1;
+        for (int i = 0; i < count; i++)
+        {
+            var r = rows[i + 1];
+            if (r.Length < 4) continue;
+            int x = count <= 1 ? 0 : Mathf.RoundToInt((float)i / (count - 1) * (W - 1));
+            camera |= r[3] == "1";
+            if (r[2].Length > 0) Dot(pixels, W, H, x, ParseF(r[2]), new Color32(255, 217, 64, 255));
+            if (r[1].Length == 0) continue;
+            float angle = ParseF(r[1]);
+            low = Mathf.Min(low, angle);
+            high = Mathf.Max(high, angle);
+            Dot(pixels, W, H, x, angle, new Color32(90, 210, 255, 255));
+        }
+        angleTexture.SetPixels32(pixels);
+        angleTexture.Apply(false);
+        angleGraph.texture = angleTexture;
+        graphInfo.text = high < low ? "No angle recording for this session."
+            : $"knee angle {low:0}° to {high:0}°  ·  {Duration(ParseF(rows[rows.Count - 1][0]))}  ·  lines every 30°  ·  yellow = target" +
+              (camera ? "" : "  ·  SIMULATOR, not the camera");
+    }
+
+    static void Dot(Color32[] pixels, int w, int h, int x, float degrees, Color32 colour)
+    {
+        int y = Mathf.Clamp(Mathf.RoundToInt(degrees / 140f * (h - 1)), 0, h - 2);
+        for (int dx = 0; dx < 2 && x + dx < w; dx++)
+        {
+            pixels[y * w + x + dx] = colour;
+            pixels[(y + 1) * w + x + dx] = colour;
+        }
+    }
+
+    void PaintPain()
+    {
+        for (int i = 0; i < painButtons.Length; i++) Paint(painButtons[i], i == painChoice);
+    }
+
+    void BuildSessionEditor()
+    {
+        sessionEditor = SectionBox(pages[Page.Log], "SESSION  ·  knee angle, pain and note", new Vector2(0, -40f), new Vector2(1100f, 720f));
+        sessionEditor.GetComponent<Image>().color = CardCol;
+        sessionEditor.GetComponent<Image>().raycastTarget = true; // block the table behind
+        editorInfo = Lbl(sessionEditor, "", new Vector2(0, 270f), new Vector2(1040f, 80f), 22, Color.white);
+        var graph = new GameObject("AngleGraph", typeof(RectTransform), typeof(RawImage)).GetComponent<RawImage>();
+        graph.transform.SetParent(sessionEditor, false);
+        graph.rectTransform.anchoredPosition = new Vector2(0, 115f);
+        graph.rectTransform.sizeDelta = new Vector2(1000f, 200f);
+        angleGraph = graph;
+        graphInfo = Lbl(sessionEditor, "", new Vector2(0, -2f), new Vector2(1000f, 26f), 18, Muted);
+        Lbl(sessionEditor, "Pain (0 = none, 10 = worst)", new Vector2(0, -45f), new Vector2(600f, 30f), 22, Gold);
+        for (int i = 0; i <= 10; i++)
+        {
+            int value = i;
+            painButtons[i] = Toggle(sessionEditor, i.ToString(), new Vector2(-440f + i * 88f, -95f), 78f, () => { painChoice = value; PaintPain(); });
+        }
+        noteField = Field(sessionEditor, new Vector2(0, -180f), 1000f, "Therapist's note", InputField.ContentType.Standard);
+        Button(sessionEditor, "SAVE", new Vector2(300f, -285f), new Vector2(240f, 66f), Green, Color.white, () =>
+        {
+            editing.hasPain = painChoice >= 0;
+            editing.pain = Mathf.Max(0, painChoice);
+            editing.note = noteField.text.Trim();
+            PatientStore.Save();
+            CloudSync.Push(selected);
+            UISound.Confirm();
+            RefreshLog();
+        }, 26);
+        Button(sessionEditor, "CLOSE", new Vector2(0f, -285f), new Vector2(240f, 66f), Off, Color.white, CloseSession, 26);
+        Button(sessionEditor, "DELETE (click twice)", new Vector2(-320f, -285f), new Vector2(280f, 66f), Off, Color.white, () =>
+        {
+            if (!removeArmed) { removeArmed = true; editorInfo.text = "Click DELETE again to remove this session."; return; }
+            selected.RemoveSession(editing);
+            PatientStore.Save();
+            RefreshLog();
+        }, 22);
     }
 
     // ================= Settings =================
@@ -831,7 +1176,7 @@ public class MainMenu : MonoBehaviour
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"Each game has {Stages.Count} stages. A new patient starts at Stage 1.");
         sb.AppendLine($"A stage is passed with at least {Stages.PassFraction * 100f:0}% (waves cleared or goals scored); the next stage then opens. Passed stages can always be replayed.");
-        sb.AppendLine("Knee-bend targets are a share of each patient's comfortable max bend and never pass the safety limit (110°).");
+        sb.AppendLine("Knee-bend targets are a share of each patient's comfortable max bend and never pass the patient's safety limit (110° unless set lower).");
         sb.AppendLine();
         for (int s = 1; s <= Stages.Count; s++)
             sb.AppendLine($"<color=#FFD94A>{Stages.Name(s)}</color>    Beach: {Stages.Describe(TrainingGame.Beach, s)}     Football: {Stages.Describe(TrainingGame.Football, s)}");
@@ -839,7 +1184,11 @@ public class MainMenu : MonoBehaviour
         r.supportRichText = true;
 
         var data = SectionBox(page, "DATA", new Vector2(0, -CH / 2f + 90f), new Vector2(CW, 180f));
-        settingsInfo = Lbl(data, "", new Vector2(0, -15f), new Vector2(CW - 60f, 110f), 21, Color.white, false, TextAnchor.UpperLeft);
+        settingsInfo = Lbl(data, "", new Vector2(-250f, -15f), new Vector2(CW - 560f, 110f), 21, Color.white, false, TextAnchor.UpperLeft);
+        Lbl(data, "Dashboard PIN (empty = none)", new Vector2(530f, 45f), new Vector2(400f, 30f), 19, Gold);
+        newPin = Field(data, new Vector2(450f, 0f), 220f, "new PIN", InputField.ContentType.Pin);
+        Button(data, "SET", new Vector2(660f, 0f), new Vector2(140f, 54f), Green, Color.white, SavePin, 22);
+        pinState = Lbl(data, "", new Vector2(530f, -45f), new Vector2(440f, 30f), 17, Muted);
     }
 
     void RefreshSettings()
@@ -1028,9 +1377,12 @@ public class MainMenu : MonoBehaviour
 
     static string Empty(string s, string fallback = "-") => string.IsNullOrWhiteSpace(s) ? fallback : s;
     static string Short(string s, int max) => s.Length <= max ? s : s.Substring(0, max - 1) + ".";
-    static string GameName(string g) => g == "Beach" ? "Beach waves" : g == "Football" ? "Penalty practice" : g;
+    static string GameName(string g) => g == "Beach" ? "Beach waves" : g == "Football" ? "Penalty practice" : g == "CheckUp" ? "AR check-up" : g;
 
     static string SuccessText(SessionEntry e) =>
+        e.game == "CheckUp" ? "check-up" :
+        e.stoppedEarly ? $"<color=#FF7A66>stopped {e.done}/{e.planned}</color>" :
+        e.easier ? $"<color=#FFD94A>{e.percent}%</color>  eased" :
         e.passed ? $"<color=#5BE584>{e.percent}%  passed</color>" : $"<color=#FFD94A>{e.percent}%</color>  practice";
 
     static string Duration(float seconds)

@@ -1,0 +1,16 @@
+name = "knee-rehab"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "knee-rehab"
+database_id = "00000000-0000-0000-0000-000000000000" # replace after: wrangler d1 create knee-rehab
+
+[[durable_objects.bindings]]
+name = "LIVE"
+class_name = "LiveRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["LiveRoom"]

@@ -23,6 +23,18 @@ public class SessionEntry
     public string leg;         // "Left", "Right" or "Both"
     public float bestLeft;     // best bend of each leg in this session (0 = not trained)
     public float bestRight;
+    // What was really run. Older records read these as false / 0 / empty.
+    public bool stoppedEarly;   // ended before all waves / kicks were done
+    public bool easier;         // therapist made values easier than the stage, so it cannot unlock
+    public int planned, done;   // waves / kicks
+    public int balancePauses;
+    public string settings;     // targets, holds, movement or support, as used
+    public bool hasExtension;   // bestExtension was measured (0 is a real value: a straight knee)
+    public float bestExtension; // lowest knee angle reached, degrees
+    public bool hasPain;
+    public int pain;            // 0..10, entered by the therapist
+    public string note;
+    public string angleFile;     // full knee-angle recording, in Sessions/
 }
 
 /// <summary>Extra numbers a game reports when a session ends.</summary>
@@ -31,6 +43,11 @@ public struct SessionExtras
     public float durationSeconds, avgAngle, bestLeft, bestRight;
     public int safetyAlerts;
     public string leg;
+    public bool stoppedEarly, easier;
+    public int planned, done, balancePauses;
+    public string settings;
+    public bool hasExtension;
+    public float bestExtension;
 }
 
 /// <summary>A patient's progress in one game: highest stage they may play, sessions and best results.</summary>
@@ -53,6 +70,35 @@ public class PatientRecord
     [Tooltip("Largest knee bend this patient can comfortably reach; stage targets scale with it")]
     public float comfortableMaxAngle = 90f;
     public string notes = "";
+    public float safetyLimit;    // 0 = not set, use the default
+    public float extensionGoal;  // straightest angle to ask for; 0 = fully straight
+    public bool sprayAllowed;    // water spray on a beach splash; off until a clinician allows it (healed wound)
+
+    public const float DefaultSafetyLimit = 110f;
+    public float SafetyLimit => safetyLimit > 0f ? Mathf.Clamp(safetyLimit, 40f, DefaultSafetyLimit) : DefaultSafetyLimit;
+    /// <summary>Stage straighten targets, never straighter than this patient's goal.</summary>
+    public float StraightenHardest(int stage) => Mathf.Max(Stages.BeachStraightenHardest(stage), extensionGoal);
+    public float StraightenEasiest(int stage) => Mathf.Max(Stages.BeachStraightenEasiest(stage), StraightenHardest(stage) + 5f);
+
+    /// <summary>Removes one session and recounts the totals; unlocked stages stay as they are.</summary>
+    public void RemoveSession(SessionEntry entry)
+    {
+        if (!history.Remove(entry)) return;
+        if (!string.IsNullOrEmpty(entry.angleFile)) PatientStore.DeleteLogs(entry.angleFile);
+        foreach (var game in new[] { TrainingGame.Beach, TrainingGame.Football })
+        {
+            var progress = Progress(game);
+            progress.sessions = progress.bestScore = progress.bestPercent = 0;
+            foreach (var e in history)
+            {
+                if (e.game != game.ToString()) continue;
+                progress.sessions++;
+                if (e.stoppedEarly) continue;
+                progress.bestScore = Mathf.Max(progress.bestScore, e.score);
+                progress.bestPercent = Mathf.Max(progress.bestPercent, e.percent);
+            }
+        }
+    }
     public string surgeryType = "";
     public string surgeryDate = "";   // as typed, e.g. 2026-10-02 or 2/10/2026
     public string therapist = "";
@@ -144,22 +190,75 @@ public static class PatientStore
         get
         {
             if (data != null) return data;
-            try
+            data = Read(FilePath);
+            if (data == null && File.Exists(FilePath))
             {
-                data = File.Exists(FilePath) ? JsonUtility.FromJson<Root>(File.ReadAllText(FilePath)) : null;
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogWarning($"[PatientStore] Could not read {FilePath}: {e.Message}");
+                // Damaged file: keep a copy for recovery before anything is saved over it, then try the backup.
+                File.Copy(FilePath, FilePath + $".damaged-{System.DateTime.Now:yyyyMMdd_HHmmss}", true);
+                data = Read(FilePath + ".bak");
             }
             if (data == null) data = new Root();
             return data;
         }
     }
 
+    static Root Read(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? JsonUtility.FromJson<Root>(File.ReadAllText(path)) : null;
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[PatientStore] Could not read {path}: {e.Message}");
+            return null;
+        }
+    }
+
     public static IReadOnlyList<PatientRecord> All => Data.patients;
 
     public static PatientRecord Get(string id) => Data.patients.Find(p => p.id == id);
+
+    /// <summary>An AR check-up goes into the history without score or stage.</summary>
+    public static void RecordCheckUp(string id, float seconds, float bestBend, float straightest, int alerts, bool fromCamera)
+    {
+        var p = Get(id);
+        if (p == null) return;
+        p.lastVisit = System.DateTime.UtcNow.ToString("o");
+        p.history.Add(new SessionEntry
+        {
+            date = p.lastVisit, game = "CheckUp", durationSeconds = seconds, bestAngle = bestBend,
+            hasExtension = true, bestExtension = straightest, safetyAlerts = alerts, leg = p.operatedLeg,
+            angleFile = TherapistMonitor.CurrentFile, settings = fromCamera ? "AR check-up" : "AR check-up (simulator)",
+        });
+        Save();
+        CloudSync.Push(p);
+    }
+
+    public static void Delete(PatientRecord p)
+    {
+        if (!Data.patients.Remove(p)) return;
+        Save();
+        // The backup would still hold the deleted patient, so replace it too.
+        File.Copy(FilePath, FilePath + ".bak", true);
+        DeleteLogs($"*_{p.id}_*.csv");
+        Leaderboard.Remove(p.id);
+    }
+
+    /// <summary>Removes recordings from Sessions/ (a file name or a pattern).</summary>
+    public static void DeleteLogs(string pattern)
+    {
+        try
+        {
+            string folder = Path.Combine(Application.persistentDataPath, "Sessions");
+            if (!Directory.Exists(folder)) return;
+            foreach (var file in Directory.GetFiles(folder, pattern)) File.Delete(file);
+        }
+        catch (IOException e)
+        {
+            Debug.LogWarning($"[PatientStore] Could not delete {pattern}: {e.Message}");
+        }
+    }
 
     public static PatientRecord Create(string name)
     {
@@ -179,7 +278,11 @@ public static class PatientStore
     {
         try
         {
-            File.WriteAllText(FilePath, JsonUtility.ToJson(Data, true));
+            // Write beside the file first, so a crash half-way never leaves a broken patient list.
+            string temp = FilePath + ".tmp";
+            File.WriteAllText(temp, JsonUtility.ToJson(Data, true));
+            if (File.Exists(FilePath)) File.Replace(temp, FilePath, FilePath + ".bak");
+            else File.Move(temp, FilePath);
         }
         catch (System.Exception e)
         {
@@ -197,14 +300,17 @@ public static class PatientStore
     public static bool RecordSession(string id, TrainingGame game, int stage, int score, float fraction, float bestAngle,
                                      SessionExtras extras, out bool passed)
     {
-        passed = fraction >= Stages.PassFraction;
+        passed = !extras.stoppedEarly && !extras.easier && fraction >= Stages.PassFraction;
         var p = Get(id);
         if (p == null) return false;
         var prog = p.Progress(game);
         int percent = Mathf.RoundToInt(fraction * 100f);
         prog.sessions++;
-        prog.bestScore = Mathf.Max(prog.bestScore, score);
-        prog.bestPercent = Mathf.Max(prog.bestPercent, percent);
+        if (!extras.stoppedEarly)
+        {
+            prog.bestScore = Mathf.Max(prog.bestScore, score);
+            prog.bestPercent = Mathf.Max(prog.bestPercent, percent);
+        }
         bool unlocked = passed && stage >= prog.unlockedStage && prog.unlockedStage < Stages.Count;
         if (unlocked) prog.unlockedStage = stage + 1;
         p.lastVisit = System.DateTime.UtcNow.ToString("o");
@@ -214,8 +320,13 @@ public static class PatientStore
             percent = percent, passed = passed, bestAngle = bestAngle,
             durationSeconds = extras.durationSeconds, avgAngle = extras.avgAngle, safetyAlerts = extras.safetyAlerts,
             leg = extras.leg ?? p.operatedLeg, bestLeft = extras.bestLeft, bestRight = extras.bestRight,
+            stoppedEarly = extras.stoppedEarly, easier = extras.easier, planned = extras.planned, done = extras.done,
+            balancePauses = extras.balancePauses, settings = extras.settings,
+            hasExtension = extras.hasExtension, bestExtension = extras.bestExtension,
+            angleFile = TherapistMonitor.CurrentFile,
         });
         Save();
+        CloudSync.Push(p); // only when cloud.json exists
         return unlocked;
     }
 }
@@ -227,11 +338,23 @@ public static class SessionConfig
 
     public static bool Active;
     public static string PatientId;
+    /// <summary>With one headset: true when the doctor wears it (AR check-up instead of the games).</summary>
+    public static bool DoctorWearsHeadset;
+
+    public static void LaunchCheckUp(PatientRecord patient)
+    {
+        Active = true;
+        PatientId = patient.id;
+        SceneManager.LoadScene(CheckUpSession.SceneName);
+    }
     public static TrainingGame Game;
     public static int Stage = 1;
     public static WaveGameManager.Movement Movement = WaveGameManager.Movement.Bend;
 
     public static PatientRecord Patient => Active ? PatientStore.Get(PatientId) : null;
+
+    /// <summary>Key for log files: the patient's id when launched from the menu, otherwise the typed name.</summary>
+    public static string LogId(string typedName) => Active ? PatientId : typedName;
 
     public static void Launch(PatientRecord patient, TrainingGame game, int stage, WaveGameManager.Movement movement)
     {

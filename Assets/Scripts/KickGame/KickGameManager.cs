@@ -52,6 +52,10 @@ public class KickGameManager : MonoBehaviour
     public float resultSeconds = 1.5f;
     public float restSeconds = 2f;
 
+    [Header("Therapist")]
+    [Tooltip("Setup screen on the PC before each session; off = start with A / Space")]
+    public bool useDoctorPanel = true;
+
     [Header("Scene references")]
     public JointAngleCalculator angleSource;
     [Tooltip("Camera knee sensor; until it sends readings the simulator moves the leg")]
@@ -96,6 +100,18 @@ public class KickGameManager : MonoBehaviour
     AudioSource audioSource;
     AudioClip readyClip, kickClip, goalClip, missClip, alertClip, netClip, whistleClip, finalWhistleClip;
     KickLogger logger;
+    bool recordOpen;  // a session has started and is not yet in the patient's history
+    FootballSetupPanel panel;
+    float sessionMinExtension = float.MaxValue; // straightest knee reached in a kick
+    SessionControls controls;
+    TherapistMonitor monitor;
+
+    LiveReading Live() => new LiveReading
+    {
+        angle = Angle, target = currentTarget, limit = safetyCeilingAngle, alerts = safetyAlerts,
+        cameraConnected = cameraSensor && cameraSensor.Connected, cameraLost = SensorLost,
+        progress = $"kicks done {peakCount} of {kicksPerSession}  ·  balance pauses {balancePauses}",
+    };
 
     float Angle => angleSource ? angleSource.CurrentKneeAngle : 0f;
     bool SensorLost => cameraSensor && cameraSensor.TrackingLost;
@@ -110,17 +126,28 @@ public class KickGameManager : MonoBehaviour
         if (!crowd) crowd = FindFirstObjectByType<StadiumCrowd>();
         hud.ApplyTheme(UIStyle.Theme.Football);
         SetupAudio();
+        if (useDoctorPanel) panel = FootballSetupPanel.Create(this);
+        controls = SessionControls.Create(transform, StopSession);
+        monitor = TherapistMonitor.Create(transform, Live);
 
         while (true)
         {
             yield return WaitForStartPress();
+            controls.SetVisible(true);
+            monitor.SetVisible(true);
             yield return RunSession();
+            controls.SetVisible(false);
+            monitor.SetVisible(false);
         }
     }
 
     void Update()
     {
-        if (RehabInput.MenuPressed) SessionConfig.ReturnToMenu();
+        if (RehabInput.MenuPressed)
+        {
+            SaveStoppedSession();
+            SessionConfig.ReturnToMenu();
+        }
         if (supportRail && supportRail.activeSelf != usesSupport) supportRail.SetActive(usesSupport);
 
         float angle = Angle;
@@ -142,7 +169,8 @@ public class KickGameManager : MonoBehaviour
             Play(alertClip);
             balancePauses++;
         }
-        hud.SetWarning(over ? "Too far! Ease your knee back gently"
+        hud.SetWarning(SessionControls.Paused ? "Paused - rest your leg"
+                     : over ? "Too far! Ease your knee back gently"
                      : leaning ? "Stand steady - step back to your spot"
                      : SensorLost ? "The camera can't see your leg" : null);
 
@@ -155,6 +183,64 @@ public class KickGameManager : MonoBehaviour
     }
 
     void OnDestroy() => logger?.Dispose();
+
+    void OnApplicationQuit() => SaveStoppedSession();
+
+    /// <summary>Therapist's STOP button: keep what was done, then go back to the menu (or restart the scene).</summary>
+    public void StopSession()
+    {
+        SaveStoppedSession();
+        logger?.Dispose();
+        logger = null;
+        if (Application.CanStreamedLevelBeLoaded(SessionConfig.MenuScene)) SessionConfig.ReturnToMenu();
+        else UnityEngine.SceneManagement.SceneManager.LoadScene(gameObject.scene.name);
+    }
+
+    /// <summary>True when the therapist lowered anything below the chosen stage, so it must not unlock the next one.</summary>
+    bool IsEasierThanStage()
+    {
+        var p = SessionConfig.Patient;
+        if (p == null) return false;
+        int s = SessionConfig.Stage;
+        return kicksPerSession < Stages.Kicks(s)
+               || comfortableMaxAngle < p.comfortableMaxAngle - 0.5f
+               || minWindUpPercent < Stages.KickMinPercent(s) - 0.005f
+               || maxWindUpPercent < Stages.KickMaxPercent(s) - 0.005f
+               || windUpHoldSeconds < Stages.KickHoldSeconds(s) - 0.05f
+               || attemptSeconds > Stages.KickAttemptSeconds(s) + 0.5f
+               || fullExtensionAngle > 10.5f || angleTolerance > 3.5f;
+    }
+
+    /// <summary>A session ended early (menu or quit) still goes into the history, marked as stopped.</summary>
+    void SaveStoppedSession()
+    {
+        if (!recordOpen || !SessionConfig.Active || SessionConfig.Game != TrainingGame.Football) return;
+        recordOpen = false;
+        var extras = SessionExtrasNow();
+        extras.stoppedEarly = peakCount < kicksPerSession;
+        PatientStore.RecordSession(SessionConfig.PatientId, TrainingGame.Football, SessionConfig.Stage, score,
+                                   peakCount > 0 ? (float)goals / peakCount : 0f, sessionMaxAngle, extras, out _);
+    }
+
+    SessionExtras SessionExtrasNow() => new SessionExtras
+    {
+        durationSeconds = Time.time - sessionStartTime,
+        avgAngle = peakCount > 0 ? peakSum / peakCount : 0f,
+        safetyAlerts = safetyAlerts,
+        balancePauses = balancePauses,
+        leg = operatedLeg.ToString(),
+        bestLeft = operatedLeg == Leg.Left ? sessionMaxAngle : 0f,
+        bestRight = operatedLeg == Leg.Right ? sessionMaxAngle : 0f,
+        planned = kicksPerSession,
+        hasExtension = sessionMinExtension >= 0f && sessionMinExtension <= 180f,
+        bestExtension = sessionMinExtension <= 180f ? sessionMinExtension : 0f,
+        easier = IsEasierThanStage(),
+        done = peakCount,
+        settings = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                                 "wind-up {0:0}-{1:0}% of {2:0} deg; hold {3:0.#} s; support {4}",
+                                 minWindUpPercent * 100f, maxWindUpPercent * 100f, comfortableMaxAngle,
+                                 windUpHoldSeconds, usesSupport ? "yes" : "no"),
+    };
 
     // ---------------- Session flow ----------------
 
@@ -171,6 +257,18 @@ public class KickGameManager : MonoBehaviour
                      (SessionConfig.Active ? $"\n{Stages.Name(SessionConfig.Stage)}" : "");
         hud.SetInfo(who.Replace("\n", "  ·  "));
         // After a session the results card stays up and its button starts the next one; otherwise the start card.
+        if (panel)
+        {
+            startRequested = false;
+            if (!hud.ResultsShowing) hud.ShowTitleCard($"{who}\nYour therapist is setting up", "PLEASE WAIT");
+            panel.Show(who.Replace("\n", "  ·  "));
+            // Only the panel's Start button begins: Space would type into its fields.
+            while (!startRequested) yield return null;
+            startRequested = false;
+            hud.HideTitleCard();
+            hud.HideResults();
+            yield break;
+        }
         if (!hud.ResultsShowing)
             hud.ShowTitleCard($"{who}\n{kicksPerSession} penalties  ·  pull your heel back, then kick!", "PRESS  A  TO  KICK OFF");
         yield return null;
@@ -184,6 +282,8 @@ public class KickGameManager : MonoBehaviour
     {
         sessionRunning = true;
         sessionStartTime = Time.time;
+        recordOpen = true;
+        sessionMinExtension = float.MaxValue;
         peakSum = 0f;
         peakCount = 0;
         score = streak = bestStreak = goals = safetyAlerts = balancePauses = 0;
@@ -191,7 +291,7 @@ public class KickGameManager : MonoBehaviour
         sessionMaxAngle = Angle;
         windUpPercent = startWindUpPercent;
         startHeadXZ = head ? Flat(head.position) : Vector3.zero;
-        logger = new KickLogger(patientId, operatedLeg.ToString(), usesSupport);
+        logger = new KickLogger(SessionConfig.LogId(patientId), operatedLeg.ToString(), usesSupport);
         Debug.Log($"[KickGame] Logging session to {logger.FilePath}");
 
         for (int n = 3; n > 0; n--)
@@ -236,18 +336,11 @@ public class KickGameManager : MonoBehaviour
         if (SessionConfig.Active && SessionConfig.Game == TrainingGame.Football)
         {
             int played = SessionConfig.Stage;
-            var extras = new SessionExtras
-            {
-                durationSeconds = Time.time - sessionStartTime,
-                avgAngle = peakCount > 0 ? peakSum / peakCount : 0f,
-                safetyAlerts = safetyAlerts,
-                leg = operatedLeg.ToString(),
-                bestLeft = operatedLeg == Leg.Left ? sessionMaxAngle : 0f,
-                bestRight = operatedLeg == Leg.Right ? sessionMaxAngle : 0f,
-            };
+            var extras = SessionExtrasNow();
+            recordOpen = false;
             bool unlocked = PatientStore.RecordSession(SessionConfig.PatientId, TrainingGame.Football, played, score,
                                                        fraction, sessionMaxAngle, extras, out bool passed);
-            fourthRow = (Stages.Name(played), passed ? "PASSED" : $"need {Stages.PassFraction * 100f:0}%", passed ? WaveHUD.Good : WaveHUD.Accent);
+            fourthRow = (Stages.Name(played), passed ? "PASSED" : extras.easier ? "easier settings" : $"need {Stages.PassFraction * 100f:0}%", passed ? WaveHUD.Good : WaveHUD.Accent);
             if (unlocked)
             {
                 SessionConfig.Stage = played + 1;
@@ -282,6 +375,7 @@ public class KickGameManager : MonoBehaviour
         operatedLeg = p.IsLeftLeg ? Leg.Left : Leg.Right;
         if (cameraSensor) cameraSensor.useLeftLeg = operatedLeg == Leg.Left;
         comfortableMaxAngle = p.comfortableMaxAngle;
+        safetyCeilingAngle = p.SafetyLimit;
         kicksPerSession = Stages.Kicks(s);
         startWindUpPercent = Stages.KickStartPercent(s);
         minWindUpPercent = Stages.KickMinPercent(s);
@@ -422,6 +516,7 @@ public class KickGameManager : MonoBehaviour
         Debug.Log($"[KickGame] Kick {index}: {targets[zone].name} target {target:0}° max {maxFlexion:0}° min {minExtension:0}° " +
                   $"armed={armed} full={fullExtension} goal={goal} +{points}");
 
+        sessionMinExtension = Mathf.Min(sessionMinExtension, minExtension);
         peakSum += maxFlexion; // deepest wind-up of this kick, for the patient record
         peakCount++;
         logger.LogKick(index, targets[zone].name, percentUsed, target, maxFlexion, minExtension, armed, fullExtension, goal,
