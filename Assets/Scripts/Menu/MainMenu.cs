@@ -82,6 +82,58 @@ public class MainMenu : MonoBehaviour
 
     // ================= Navigation =================
 
+    // ---------------- Optional PIN ----------------
+    // Keeps patients and visitors out of the dashboard. It does not encrypt the files on this PC.
+    const string PinKey = "GP2.Pin";
+    RectTransform pinBox;
+    InputField pinEntry;
+
+    static string Hash(string pin)
+    {
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        return System.Convert.ToBase64String(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes("gp2:" + pin)));
+    }
+
+    void AskPin()
+    {
+        if (PlayerPrefs.GetString(PinKey, "").Length == 0) { ShowDashboard(); return; }
+        if (!pinBox)
+        {
+            pinBox = SectionBox(titleScreen, "THERAPIST PIN", Vector2.zero, new Vector2(620f, 320f));
+            pinBox.GetComponent<Image>().color = CardCol;
+            pinBox.GetComponent<Image>().raycastTarget = true;
+            pinEntry = Field(pinBox, new Vector2(0, 40f), 300f, "PIN", InputField.ContentType.Pin);
+            Button(pinBox, "OPEN", new Vector2(130f, -80f), new Vector2(220f, 66f), Green, Color.white, CheckPin, 26);
+            Button(pinBox, "CANCEL", new Vector2(-130f, -80f), new Vector2(220f, 66f), Off, Color.white,
+                   () => pinBox.gameObject.SetActive(false), 26);
+        }
+        pinEntry.text = "";
+        pinBox.gameObject.SetActive(true);
+        pinBox.SetAsLastSibling();
+        pinEntry.ActivateInputField();
+    }
+
+    void CheckPin()
+    {
+        if (Hash(pinEntry.text) != PlayerPrefs.GetString(PinKey, "")) { pinEntry.text = ""; UISound.Error(); return; }
+        pinBox.gameObject.SetActive(false);
+        ShowDashboard();
+    }
+
+    InputField newPin;
+    Text pinState;
+
+    void SavePin()
+    {
+        string pin = newPin.text.Trim();
+        if (pin.Length > 0 && pin.Length < 4) { pinState.text = "Use at least 4 digits."; UISound.Error(); return; }
+        if (pin.Length == 0) PlayerPrefs.DeleteKey(PinKey); else PlayerPrefs.SetString(PinKey, Hash(pin));
+        PlayerPrefs.Save();
+        newPin.text = "";
+        pinState.text = pin.Length == 0 ? "PIN removed." : "PIN saved. It is asked at the START screen.";
+        UISound.Confirm();
+    }
+
     void ShowDashboard()
     {
         titleScreen.gameObject.SetActive(false);
@@ -193,7 +245,7 @@ public class MainMenu : MonoBehaviour
         Lbl(games, "PENALTY PRACTICE", new Vector2(230f, -5f), new Vector2(420f, 44f), 34, PitchLine, true);
         Lbl(games, "Standing  ·  wind up and kick", new Vector2(230f, -42f), new Vector2(420f, 30f), 21, Muted);
 
-        var start = Button(card, "START", new Vector2(0, -150f), new Vector2(520f, 120f), Green, Color.white, ShowDashboard, 64);
+        var start = Button(card, "START", new Vector2(0, -150f), new Vector2(520f, 120f), Green, Color.white, AskPin, 64);
         start.gameObject.AddComponent<Pulse>();
         Lbl(card, System.DateTime.Now.ToString("dddd d MMMM yyyy", CultureInfo.InvariantCulture) + "   ·   use the mouse",
              new Vector2(0, -290f), new Vector2(1000f, 34f), 22, Muted);
@@ -1093,7 +1145,7 @@ public class MainMenu : MonoBehaviour
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"Each game has {Stages.Count} stages. A new patient starts at Stage 1.");
         sb.AppendLine($"A stage is passed with at least {Stages.PassFraction * 100f:0}% (waves cleared or goals scored); the next stage then opens. Passed stages can always be replayed.");
-        sb.AppendLine("Knee-bend targets are a share of each patient's comfortable max bend and never pass the safety limit (110°).");
+        sb.AppendLine("Knee-bend targets are a share of each patient's comfortable max bend and never pass the patient's safety limit (110° unless set lower).");
         sb.AppendLine();
         for (int s = 1; s <= Stages.Count; s++)
             sb.AppendLine($"<color=#FFD94A>{Stages.Name(s)}</color>    Beach: {Stages.Describe(TrainingGame.Beach, s)}     Football: {Stages.Describe(TrainingGame.Football, s)}");
@@ -1101,7 +1153,11 @@ public class MainMenu : MonoBehaviour
         r.supportRichText = true;
 
         var data = SectionBox(page, "DATA", new Vector2(0, -CH / 2f + 90f), new Vector2(CW, 180f));
-        settingsInfo = Lbl(data, "", new Vector2(0, -15f), new Vector2(CW - 60f, 110f), 21, Color.white, false, TextAnchor.UpperLeft);
+        settingsInfo = Lbl(data, "", new Vector2(-250f, -15f), new Vector2(CW - 560f, 110f), 21, Color.white, false, TextAnchor.UpperLeft);
+        Lbl(data, "Dashboard PIN (empty = none)", new Vector2(530f, 45f), new Vector2(400f, 30f), 19, Gold);
+        newPin = Field(data, new Vector2(450f, 0f), 220f, "new PIN", InputField.ContentType.Pin);
+        Button(data, "SET", new Vector2(660f, 0f), new Vector2(140f, 54f), Green, Color.white, SavePin, 22);
+        pinState = Lbl(data, "", new Vector2(530f, -45f), new Vector2(440f, 30f), 17, Muted);
     }
 
     void RefreshSettings()

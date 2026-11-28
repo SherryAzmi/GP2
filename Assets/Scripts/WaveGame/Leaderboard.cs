@@ -44,6 +44,22 @@ public static class Leaderboard
         return new List<LeaderboardEntry>();
     }
 
+    /// <summary>Removes a deleted patient's scores.</summary>
+    public static void Remove(string patientId)
+    {
+        if (string.IsNullOrEmpty(patientId)) return;
+        var list = Load();
+        if (list.RemoveAll(e => e.patientId == patientId) == 0) return;
+        try
+        {
+            File.WriteAllText(FilePath, JsonUtility.ToJson(new Store { entries = list }, true));
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[Leaderboard] Could not save {FilePath}: {e.Message}");
+        }
+    }
+
     /// <summary>Saves the entry and returns the sorted list and the entry's 1-based rank.</summary>
     public static List<LeaderboardEntry> Add(LeaderboardEntry entry, out int rank)
     {

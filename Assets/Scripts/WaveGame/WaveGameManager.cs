@@ -249,7 +249,8 @@ public class WaveGameManager : MonoBehaviour
             if (sessionRunning) safetyAlerts++;
         }
         aboveCeiling = over;
-        hud.SetWarning(over ? "Too far! Ease your knee back gently"
+        hud.SetWarning(SessionControls.Paused ? "Paused - rest your leg"
+                     : over ? "Too far! Ease your knee back gently"
                      : SensorLost ? "The camera can't see your leg" : null);
     }
 

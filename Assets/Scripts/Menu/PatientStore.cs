@@ -84,6 +84,7 @@ public class PatientRecord
     public void RemoveSession(SessionEntry entry)
     {
         if (!history.Remove(entry)) return;
+        if (!string.IsNullOrEmpty(entry.angleFile)) PatientStore.DeleteLogs(entry.angleFile);
         foreach (var game in new[] { TrainingGame.Beach, TrainingGame.Football })
         {
             var progress = Progress(game);
@@ -220,7 +221,27 @@ public static class PatientStore
 
     public static void Delete(PatientRecord p)
     {
-        if (Data.patients.Remove(p)) Save();
+        if (!Data.patients.Remove(p)) return;
+        Save();
+        // The backup would still hold the deleted patient, so replace it too.
+        File.Copy(FilePath, FilePath + ".bak", true);
+        DeleteLogs($"*_{p.id}_*.csv");
+        Leaderboard.Remove(p.id);
+    }
+
+    /// <summary>Removes recordings from Sessions/ (a file name or a pattern).</summary>
+    public static void DeleteLogs(string pattern)
+    {
+        try
+        {
+            string folder = Path.Combine(Application.persistentDataPath, "Sessions");
+            if (!Directory.Exists(folder)) return;
+            foreach (var file in Directory.GetFiles(folder, pattern)) File.Delete(file);
+        }
+        catch (IOException e)
+        {
+            Debug.LogWarning($"[PatientStore] Could not delete {pattern}: {e.Message}");
+        }
     }
 
     public static PatientRecord Create(string name)

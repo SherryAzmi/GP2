@@ -105,7 +105,7 @@ public class ResultsPanel : MonoBehaviour
             row.sizeDelta = new Vector2(w, 52f);
             string date = System.DateTime.TryParse(e.date, null, System.Globalization.DateTimeStyles.RoundtripKind, out var d)
                 ? d.ToLocalTime().ToString("d MMM yyyy") : "";
-            BoardRow(row, (i + 1).ToString(), e.patient, e.score.ToString(), e.mode, $"{e.cleared}/{e.waves}", date,
+            BoardRow(row, (i + 1).ToString(), isMine ? e.patient : $"Player {i + 1}", e.score.ToString(), e.mode, $"{e.cleared}/{e.waves}", date,
                      isMine ? WaveHUD.Accent : Color.white, 30, w);
         }
 
