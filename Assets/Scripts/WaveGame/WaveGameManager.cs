@@ -169,6 +169,7 @@ public class WaveGameManager : MonoBehaviour
         var p = SessionConfig.Game == TrainingGame.Beach ? SessionConfig.Patient : null;
         if (p == null) return false;
         int s = SessionConfig.Stage;
+        safetyCeilingAngle = p.SafetyLimit;
         float top = safetyCeilingAngle - 5f;
         patientId = p.name;
         legMode = p.IsLeftLeg ? LegMode.Left : LegMode.Right;
@@ -176,8 +177,8 @@ public class WaveGameManager : MonoBehaviour
         movement = SessionConfig.Movement;
         maxTargetAngle = Mathf.Min(top, Stages.BeachBendMax(s, p.comfortableMaxAngle));
         minTargetAngle = Mathf.Min(maxTargetAngle - 5f, Stages.BeachBendMin(s, p.comfortableMaxAngle));
-        straightenEasiestAngle = Stages.BeachStraightenEasiest(s);
-        straightenHardestAngle = Stages.BeachStraightenHardest(s);
+        straightenEasiestAngle = p.StraightenEasiest(s);
+        straightenHardestAngle = p.StraightenHardest(s);
         wavesPerSession = Stages.BeachWaves(s);
         startHoldSeconds = Stages.BeachStartHold(s);
         maxHoldSeconds = Stages.BeachMaxHold(s);
@@ -294,11 +295,30 @@ public class WaveGameManager : MonoBehaviour
         }
         foreach (var r in results) Add(r.leg, r.waves, r.cleared, r.safetyAlerts, r.score, r.bestAngle);
         if (logger != null) Add(operatedLeg, wavesDone, cleared, safetyAlerts, score, sessionMaxAngle); // leg in progress
+        AddExtension(ref extras);
         extras.stoppedEarly = true;
         extras.done = done;
         extras.safetyAlerts = alerts;
         PatientStore.RecordSession(SessionConfig.PatientId, TrainingGame.Beach, SessionConfig.Stage, total,
                                    done > 0 ? (float)cleared_ / done : 0f, best, extras, out _);
+    }
+
+    /// <summary>Straightest knee of the session, taken from the operated leg when both were trained.</summary>
+    void AddExtension(ref SessionExtras extras)
+    {
+        var p = SessionConfig.Patient;
+        Leg wanted = p != null && p.IsLeftLeg ? Leg.Left : Leg.Right;
+        foreach (var r in results)
+        {
+            if (legMode == LegMode.Both && r.leg != wanted) continue;
+            extras.hasExtension = true;
+            extras.bestExtension = r.bestStraighten;
+        }
+        if (logger != null && wavesDone > 0 && (legMode != LegMode.Both || operatedLeg == wanted))
+        {
+            extras.hasExtension = true;
+            extras.bestExtension = sessionMinAngle;
+        }
     }
 
     SessionExtras SessionExtrasNow()
@@ -330,8 +350,8 @@ public class WaveGameManager : MonoBehaviour
         bool bend = movement != Movement.Straighten &&
                     (maxTargetAngle < stageMax - slack || minTargetAngle < stageMin - slack);
         bool straighten = movement != Movement.Bend &&
-                          (straightenEasiestAngle > Stages.BeachStraightenEasiest(s) + slack ||
-                           straightenHardestAngle > Stages.BeachStraightenHardest(s) + slack);
+                          (straightenEasiestAngle > p.StraightenEasiest(s) + slack ||
+                           straightenHardestAngle > p.StraightenHardest(s) + slack);
         return bend || straighten || wavesPerSession < Stages.BeachWaves(s) ||
                startHoldSeconds < Stages.BeachStartHold(s) - 0.05f || maxHoldSeconds < Stages.BeachMaxHold(s) - 0.05f;
     }
@@ -424,6 +444,7 @@ public class WaveGameManager : MonoBehaviour
             var extras = SessionExtrasNow();
             extras.safetyAlerts = alerts;
             extras.done = totalWaves;
+            AddExtension(ref extras);
             recordOpen = false;
             foreach (var r in results)
                 if (r.leg == Leg.Left) extras.bestLeft = Mathf.Max(extras.bestLeft, r.bestAngle);

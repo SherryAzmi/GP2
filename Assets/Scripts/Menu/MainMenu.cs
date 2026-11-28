@@ -432,7 +432,7 @@ public class MainMenu : MonoBehaviour
             $"<color=#FFD94A>Therapist</color>   {Empty(p.therapist)}   ·   <color=#FFD94A>Phone</color>   {Empty(p.phone)}\n" +
             $"<color=#FFD94A>Height / weight</color>   " + (p.heightCm <= 0 && p.weightKg <= 0 ? "not set"
                 : $"{(p.heightCm > 0 ? $"{p.heightCm:0} cm" : "-")}   ·   {(p.weightKg > 0 ? $"{p.weightKg:0.#} kg" : "-")}{bmi}") + "\n" +
-            $"<color=#FFD94A>Comfortable max bend</color>   {p.comfortableMaxAngle:0}°\n" +
+            $"<color=#FFD94A>Comfortable max bend</color>   {p.comfortableMaxAngle:0}°   ·   limit {p.SafetyLimit:0}°   ·   straighten to {p.extensionGoal:0}°\n" +
             $"<color=#FFD94A>Notes</color>   {Empty(p.notes)}";
 
         var h = p.history;
@@ -501,12 +501,15 @@ public class MainMenu : MonoBehaviour
 
         var training = SectionBox(page, "TRAINING", new Vector2(0, -183f), new Vector2(CW, 200f));
         fMax = FormRow(training, "Comfortable max bend (°)", 25f, 140f, InputField.ContentType.DecimalNumber, "90", 380f);
-        Lbl(training, "Largest bend without pain. Stage targets scale from it (safety limit 110°).",
-            new Vector2(330f, 25f), new Vector2(800f, 50f), 20, Muted, false, TextAnchor.MiddleLeft);
+        Lbl(training, "Safety limit (°)", new Vector2(-65f, 25f), new Vector2(220f, 50f), 26, Color.white, false, TextAnchor.MiddleLeft);
+        fLimit = Field(training, new Vector2(110f, 25f), 120f, "110", InputField.ContentType.DecimalNumber);
+        Lbl(training, "Straightening goal (°)", new Vector2(345f, 25f), new Vector2(290f, 50f), 26, Color.white, false, TextAnchor.MiddleLeft);
+        fGoal = Field(training, new Vector2(570f, 25f), 120f, "0", InputField.ContentType.DecimalNumber);
         fNotes = FormRow(training, "Notes", -50f, 1080f, InputField.ContentType.Standard, "Pain, walker, precautions...", 380f);
 
         formNote = Lbl(page, "", new Vector2(0, -310f), new Vector2(CW, 34f), 24, WaveHUD.Bad, true);
         Button(page, "CANCEL", new Vector2(-200f, -380f), new Vector2(240f, 70f), Off, Color.white, () => Show(formIsNew ? Page.Patients : Page.PatientFile), 26);
+        deleteButton = Button(page, "DELETE PATIENT", new Vector2(600f, -380f), new Vector2(260f, 70f), Off, Color.white, DeletePatient, 22);
         formSave = Button(page, "CREATE PATIENT", new Vector2(110f, -380f), new Vector2(340f, 70f), Green, Color.white, SubmitForm, 28).GetComponentInChildren<Text>();
     }
 
@@ -536,10 +539,33 @@ public class MainMenu : MonoBehaviour
         fTherapist.text = p != null ? p.therapist : PlayerPrefs.GetString(TherapistKey, "");
         fMax.text = p != null ? p.comfortableMaxAngle.ToString("0", CultureInfo.InvariantCulture) : "90";
         fNotes.text = p?.notes ?? "";
+        fLimit.text = (p != null ? p.SafetyLimit : PatientRecord.DefaultSafetyLimit).ToString("0", CultureInfo.InvariantCulture);
+        fGoal.text = (p != null ? p.extensionGoal : 0f).ToString("0", CultureInfo.InvariantCulture);
+        deleteArmed = false;
+        deleteButton.gameObject.SetActive(!isNew);
         SetLeg(p != null ? p.operatedLeg : "Right");
         Show(Page.Form);
         fName.Select();
         fName.ActivateInputField();
+    }
+
+    InputField fLimit, fGoal;
+    Image deleteButton;
+    bool deleteArmed;
+
+    // Two clicks: the first only asks.
+    void DeletePatient()
+    {
+        if (!deleteArmed)
+        {
+            deleteArmed = true;
+            formNote.text = $"Click DELETE again to remove {selected.name} and all their history.";
+            return;
+        }
+        PatientStore.Delete(selected);
+        if (SessionConfig.PatientId == selected.id) SessionConfig.PatientId = null;
+        SelectPatient(null);
+        Show(Page.Patients);
     }
 
     void SetLeg(string leg)
@@ -553,7 +579,10 @@ public class MainMenu : MonoBehaviour
     {
         float max = ParseF(fMax.text), height = ParseF(fHeight.text), weight = ParseF(fWeight.text);
         int.TryParse(fAge.text, out int age);
+        float limit = ParseF(fLimit.text), goal = ParseF(fGoal.text);
         string error = string.IsNullOrWhiteSpace(fName.text) ? "Enter the patient's name."
+                     : limit < 40f || limit > 110f ? "Safety limit must be between 40° and 110°."
+                     : goal < 0f || goal > 40f ? "Straightening goal must be between 0° and 40°."
                      : max < 20f || max > 140f ? "Comfortable max bend must be between 20° and 140°."
                      : age < 0 || age > 120 ? "Check the age."
                      : (height != 0f && (height < 50f || height > 250f)) ? "Height should be in centimetres (50–250)."
@@ -575,6 +604,8 @@ public class MainMenu : MonoBehaviour
         p.surgeryDate = fDate.text.Trim();
         p.therapist = fTherapist.text.Trim();
         p.comfortableMaxAngle = max;
+        p.safetyLimit = limit;
+        p.extensionGoal = goal;
         p.notes = fNotes.text.Trim();
         p.operatedLeg = legChoice;
         PatientStore.Save();
@@ -731,7 +762,7 @@ public class MainMenu : MonoBehaviour
     void BuildProgress(RectTransform page)
     {
         progressKpis = KpiRow(page, CH / 2f - 60f, new[] { "First session best bend", "Best bend so far", "Improvement", "Success: first → latest" });
-        var a = SectionBox(page, "KNEE BEND OVER TIME  ·  best angle per session", new Vector2(0, 100f), new Vector2(CW, 380f));
+        var a = SectionBox(page, "KNEE BEND AND STRAIGHTENING OVER TIME  ·  straightest: closer to 0° is better", new Vector2(0, 100f), new Vector2(CW, 380f));
         angleChart = UIStyle.Rect("Chart", a, new Vector2(0, -15f), new Vector2(CW - 60f, 320f));
         var s = SectionBox(page, "SCORE OVER TIME", new Vector2(-CW / 4f - 5f, -268f), new Vector2(CW / 2f - 10f, 345f));
         scoreChart = UIStyle.Rect("Chart", s, new Vector2(0, -15f), new Vector2(CW / 2f - 60f, 285f));
@@ -757,7 +788,9 @@ public class MainMenu : MonoBehaviour
             if (l <= 0f && r <= 0f) { string leg = string.IsNullOrEmpty(e.leg) ? selected.operatedLeg : e.leg; if (leg == "Left") l = e.bestAngle; else if (leg == "Right") r = e.bestAngle; } // older records
             left.Add(l > 0f ? l : -1f); right.Add(r > 0f ? r : -1f);
         }
-        LineChart(angleChart, new[] { ("Beach waves", SeaLine, beachA), ("Penalty practice", PitchLine, footA) }, labels, "°", 0f, -1f, "No sessions yet.");
+        var straight = new List<float>();
+        foreach (var e in h) straight.Add(e.hasExtension ? e.bestExtension : -1f);
+        LineChart(angleChart, new[] { ("Beach bend", SeaLine, beachA), ("Penalty bend", PitchLine, footA), ("Straightest", Gold, straight) }, labels, "°", 0f, -1f, "No sessions yet.");
         LineChart(scoreChart, new[] { ("Beach waves", SeaLine, beachS), ("Penalty practice", PitchLine, footS) }, labels, "", 0f, -1f, "No sessions yet.");
         LineChart(legChart, new[] { ("Left leg", Gold, left), ("Right leg", new Color(1f, 0.45f, 0.45f), right) }, labels, "°", 0f, -1f, "No sessions yet.");
         legNote.text = selected.IsLeftLeg ? "Operated: left knee. Train 'Both' in Beach Waves to compare with the healthy leg."
@@ -795,6 +828,8 @@ public class MainMenu : MonoBehaviour
         float minutes = selected.TotalMinutes;
         logTitle.text = $"SESSION LOG  ·  {selected.name}  ·  {h.Count} session{(h.Count == 1 ? "" : "s")}  ·  {minutes:0} min in total";
         var rows = new List<string[]>();
+        var clicks = new List<UnityEngine.Events.UnityAction>();
+        CloseSession();
         for (int i = h.Count - 1; i >= 0; i--)
         {
             var e = h[i];
@@ -803,11 +838,80 @@ public class MainMenu : MonoBehaviour
                 DateTimeText(e.date), GameName(e.game), "S" + e.stage, e.leg ?? "-", Duration(e.durationSeconds),
                 $"{e.bestAngle:0}°", e.avgAngle > 0 ? $"{e.avgAngle:0}°" : "-", SuccessText(e), e.score.ToString(),
                 e.safetyAlerts > 0 ? $"<color=#FF7A66>{e.safetyAlerts}</color>" : "0",
+                e.hasExtension ? $"{e.bestExtension:0}°" : "-", e.hasPain ? $"{e.pain}/10" : "-",
             });
+            var entry = e;
+            clicks.Add(() => OpenSession(entry));
         }
         Table(logTable, new[] { ("Date", 200f), ("Game", 200f), ("Stage", 90f), ("Leg", 100f), ("Time", 110f), ("Best bend", 130f),
-                                ("Avg bend", 120f), ("Success", 250f), ("Score", 110f), ("Safety alerts", 130f) },
-              rows, 44f, null, "No sessions yet.");
+                                ("Avg bend", 120f), ("Success", 250f), ("Score", 110f), ("Safety alerts", 130f),
+                                ("Straight", 130f), ("Pain", 90f) },
+              rows, 44f, clicks, "No sessions yet.");
+    }
+
+    // ---------------- One session: pain, note, delete ----------------
+
+    RectTransform sessionEditor;
+    InputField noteField;
+    SessionEntry editing;
+    readonly Image[] painButtons = new Image[11];
+    Text editorInfo;
+    int painChoice = -1;
+    bool removeArmed;
+
+    void OpenSession(SessionEntry e)
+    {
+        if (!sessionEditor) BuildSessionEditor();
+        editing = e;
+        removeArmed = false;
+        painChoice = e.hasPain ? e.pain : -1;
+        PaintPain();
+        noteField.text = e.note ?? "";
+        editorInfo.text = $"{DateTimeText(e.date)}  ·  {GameName(e.game)}  ·  stage {e.stage}\n{e.settings}";
+        sessionEditor.gameObject.SetActive(true);
+        sessionEditor.SetAsLastSibling();
+    }
+
+    void CloseSession()
+    {
+        if (sessionEditor) sessionEditor.gameObject.SetActive(false);
+    }
+
+    void PaintPain()
+    {
+        for (int i = 0; i < painButtons.Length; i++) Paint(painButtons[i], i == painChoice);
+    }
+
+    void BuildSessionEditor()
+    {
+        sessionEditor = SectionBox(pages[Page.Log], "SESSION  ·  pain and note", new Vector2(0, -40f), new Vector2(1100f, 480f));
+        sessionEditor.GetComponent<Image>().color = CardCol;
+        sessionEditor.GetComponent<Image>().raycastTarget = true; // block the table behind
+        editorInfo = Lbl(sessionEditor, "", new Vector2(0, 135f), new Vector2(1040f, 90f), 22, Color.white);
+        Lbl(sessionEditor, "Pain (0 = none, 10 = worst)", new Vector2(0, 65f), new Vector2(600f, 30f), 22, Gold);
+        for (int i = 0; i <= 10; i++)
+        {
+            int value = i;
+            painButtons[i] = Toggle(sessionEditor, i.ToString(), new Vector2(-440f + i * 88f, 15f), 78f, () => { painChoice = value; PaintPain(); });
+        }
+        noteField = Field(sessionEditor, new Vector2(0, -65f), 1000f, "Therapist's note", InputField.ContentType.Standard);
+        Button(sessionEditor, "SAVE", new Vector2(300f, -170f), new Vector2(240f, 66f), Green, Color.white, () =>
+        {
+            editing.hasPain = painChoice >= 0;
+            editing.pain = Mathf.Max(0, painChoice);
+            editing.note = noteField.text.Trim();
+            PatientStore.Save();
+            UISound.Confirm();
+            RefreshLog();
+        }, 26);
+        Button(sessionEditor, "CLOSE", new Vector2(0f, -170f), new Vector2(240f, 66f), Off, Color.white, CloseSession, 26);
+        Button(sessionEditor, "DELETE (click twice)", new Vector2(-320f, -170f), new Vector2(280f, 66f), Off, Color.white, () =>
+        {
+            if (!removeArmed) { removeArmed = true; editorInfo.text = "Click DELETE again to remove this session."; return; }
+            selected.RemoveSession(editing);
+            PatientStore.Save();
+            RefreshLog();
+        }, 22);
     }
 
     // ================= Settings =================

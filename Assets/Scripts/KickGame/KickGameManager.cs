@@ -102,6 +102,7 @@ public class KickGameManager : MonoBehaviour
     KickLogger logger;
     bool recordOpen;  // a session has started and is not yet in the patient's history
     FootballSetupPanel panel;
+    float sessionMinExtension = float.MaxValue; // straightest knee reached in a kick
     SessionControls controls;
 
     float Angle => angleSource ? angleSource.CurrentKneeAngle : 0f;
@@ -220,6 +221,8 @@ public class KickGameManager : MonoBehaviour
         bestLeft = operatedLeg == Leg.Left ? sessionMaxAngle : 0f,
         bestRight = operatedLeg == Leg.Right ? sessionMaxAngle : 0f,
         planned = kicksPerSession,
+        hasExtension = sessionMinExtension >= 0f && sessionMinExtension <= 180f,
+        bestExtension = sessionMinExtension <= 180f ? sessionMinExtension : 0f,
         easier = IsEasierThanStage(),
         done = peakCount,
         settings = string.Format(System.Globalization.CultureInfo.InvariantCulture,
@@ -269,6 +272,7 @@ public class KickGameManager : MonoBehaviour
         sessionRunning = true;
         sessionStartTime = Time.time;
         recordOpen = true;
+        sessionMinExtension = float.MaxValue;
         peakSum = 0f;
         peakCount = 0;
         score = streak = bestStreak = goals = safetyAlerts = balancePauses = 0;
@@ -360,6 +364,7 @@ public class KickGameManager : MonoBehaviour
         operatedLeg = p.IsLeftLeg ? Leg.Left : Leg.Right;
         if (cameraSensor) cameraSensor.useLeftLeg = operatedLeg == Leg.Left;
         comfortableMaxAngle = p.comfortableMaxAngle;
+        safetyCeilingAngle = p.SafetyLimit;
         kicksPerSession = Stages.Kicks(s);
         startWindUpPercent = Stages.KickStartPercent(s);
         minWindUpPercent = Stages.KickMinPercent(s);
@@ -500,6 +505,7 @@ public class KickGameManager : MonoBehaviour
         Debug.Log($"[KickGame] Kick {index}: {targets[zone].name} target {target:0}° max {maxFlexion:0}° min {minExtension:0}° " +
                   $"armed={armed} full={fullExtension} goal={goal} +{points}");
 
+        sessionMinExtension = Mathf.Min(sessionMinExtension, minExtension);
         peakSum += maxFlexion; // deepest wind-up of this kick, for the patient record
         peakCount++;
         logger.LogKick(index, targets[zone].name, percentUsed, target, maxFlexion, minExtension, armed, fullExtension, goal,

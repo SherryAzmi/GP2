@@ -29,6 +29,11 @@ public class SessionEntry
     public int planned, done;   // waves / kicks
     public int balancePauses;
     public string settings;     // targets, holds, movement or support, as used
+    public bool hasExtension;   // bestExtension was measured (0 is a real value: a straight knee)
+    public float bestExtension; // lowest knee angle reached, degrees
+    public bool hasPain;
+    public int pain;            // 0..10, entered by the therapist
+    public string note;
 }
 
 /// <summary>Extra numbers a game reports when a session ends.</summary>
@@ -40,6 +45,8 @@ public struct SessionExtras
     public bool stoppedEarly, easier;
     public int planned, done, balancePauses;
     public string settings;
+    public bool hasExtension;
+    public float bestExtension;
 }
 
 /// <summary>A patient's progress in one game: highest stage they may play, sessions and best results.</summary>
@@ -62,6 +69,33 @@ public class PatientRecord
     [Tooltip("Largest knee bend this patient can comfortably reach; stage targets scale with it")]
     public float comfortableMaxAngle = 90f;
     public string notes = "";
+    public float safetyLimit;    // 0 = not set, use the default
+    public float extensionGoal;  // straightest angle to ask for; 0 = fully straight
+
+    public const float DefaultSafetyLimit = 110f;
+    public float SafetyLimit => safetyLimit > 0f ? Mathf.Clamp(safetyLimit, 40f, DefaultSafetyLimit) : DefaultSafetyLimit;
+    /// <summary>Stage straighten targets, never straighter than this patient's goal.</summary>
+    public float StraightenHardest(int stage) => Mathf.Max(Stages.BeachStraightenHardest(stage), extensionGoal);
+    public float StraightenEasiest(int stage) => Mathf.Max(Stages.BeachStraightenEasiest(stage), StraightenHardest(stage) + 5f);
+
+    /// <summary>Removes one session and recounts the totals; unlocked stages stay as they are.</summary>
+    public void RemoveSession(SessionEntry entry)
+    {
+        if (!history.Remove(entry)) return;
+        foreach (var game in new[] { TrainingGame.Beach, TrainingGame.Football })
+        {
+            var progress = Progress(game);
+            progress.sessions = progress.bestScore = progress.bestPercent = 0;
+            foreach (var e in history)
+            {
+                if (e.game != game.ToString()) continue;
+                progress.sessions++;
+                if (e.stoppedEarly) continue;
+                progress.bestScore = Mathf.Max(progress.bestScore, e.score);
+                progress.bestPercent = Mathf.Max(progress.bestPercent, e.percent);
+            }
+        }
+    }
     public string surgeryType = "";
     public string surgeryDate = "";   // as typed, e.g. 2026-10-02 or 2/10/2026
     public string therapist = "";
@@ -182,6 +216,11 @@ public static class PatientStore
 
     public static PatientRecord Get(string id) => Data.patients.Find(p => p.id == id);
 
+    public static void Delete(PatientRecord p)
+    {
+        if (Data.patients.Remove(p)) Save();
+    }
+
     public static PatientRecord Create(string name)
     {
         var p = new PatientRecord
@@ -244,6 +283,7 @@ public static class PatientStore
             leg = extras.leg ?? p.operatedLeg, bestLeft = extras.bestLeft, bestRight = extras.bestRight,
             stoppedEarly = extras.stoppedEarly, easier = extras.easier, planned = extras.planned, done = extras.done,
             balancePauses = extras.balancePauses, settings = extras.settings,
+            hasExtension = extras.hasExtension, bestExtension = extras.bestExtension,
         });
         Save();
         return unlocked;
