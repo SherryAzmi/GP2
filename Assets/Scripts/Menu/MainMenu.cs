@@ -1031,6 +1031,8 @@ public class MainMenu : MonoBehaviour
     static string GameName(string g) => g == "Beach" ? "Beach waves" : g == "Football" ? "Penalty practice" : g;
 
     static string SuccessText(SessionEntry e) =>
+        e.stoppedEarly ? $"<color=#FF7A66>stopped {e.done}/{e.planned}</color>" :
+        e.easier ? $"<color=#FFD94A>{e.percent}%</color>  eased" :
         e.passed ? $"<color=#5BE584>{e.percent}%  passed</color>" : $"<color=#FFD94A>{e.percent}%</color>  practice";
 
     static string Duration(float seconds)

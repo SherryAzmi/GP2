@@ -23,6 +23,12 @@ public class SessionEntry
     public string leg;         // "Left", "Right" or "Both"
     public float bestLeft;     // best bend of each leg in this session (0 = not trained)
     public float bestRight;
+    // What was really run. Older records read these as false / 0 / empty.
+    public bool stoppedEarly;   // ended before all waves / kicks were done
+    public bool easier;         // therapist made values easier than the stage, so it cannot unlock
+    public int planned, done;   // waves / kicks
+    public int balancePauses;
+    public string settings;     // targets, holds, movement or support, as used
 }
 
 /// <summary>Extra numbers a game reports when a session ends.</summary>
@@ -31,6 +37,9 @@ public struct SessionExtras
     public float durationSeconds, avgAngle, bestLeft, bestRight;
     public int safetyAlerts;
     public string leg;
+    public bool stoppedEarly, easier;
+    public int planned, done, balancePauses;
+    public string settings;
 }
 
 /// <summary>A patient's progress in one game: highest stage they may play, sessions and best results.</summary>
@@ -144,16 +153,28 @@ public static class PatientStore
         get
         {
             if (data != null) return data;
-            try
+            data = Read(FilePath);
+            if (data == null && File.Exists(FilePath))
             {
-                data = File.Exists(FilePath) ? JsonUtility.FromJson<Root>(File.ReadAllText(FilePath)) : null;
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogWarning($"[PatientStore] Could not read {FilePath}: {e.Message}");
+                // Damaged file: keep a copy for recovery before anything is saved over it, then try the backup.
+                File.Copy(FilePath, FilePath + $".damaged-{System.DateTime.Now:yyyyMMdd_HHmmss}", true);
+                data = Read(FilePath + ".bak");
             }
             if (data == null) data = new Root();
             return data;
+        }
+    }
+
+    static Root Read(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? JsonUtility.FromJson<Root>(File.ReadAllText(path)) : null;
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[PatientStore] Could not read {path}: {e.Message}");
+            return null;
         }
     }
 
@@ -179,7 +200,11 @@ public static class PatientStore
     {
         try
         {
-            File.WriteAllText(FilePath, JsonUtility.ToJson(Data, true));
+            // Write beside the file first, so a crash half-way never leaves a broken patient list.
+            string temp = FilePath + ".tmp";
+            File.WriteAllText(temp, JsonUtility.ToJson(Data, true));
+            if (File.Exists(FilePath)) File.Replace(temp, FilePath, FilePath + ".bak");
+            else File.Move(temp, FilePath);
         }
         catch (System.Exception e)
         {
@@ -197,14 +222,17 @@ public static class PatientStore
     public static bool RecordSession(string id, TrainingGame game, int stage, int score, float fraction, float bestAngle,
                                      SessionExtras extras, out bool passed)
     {
-        passed = fraction >= Stages.PassFraction;
+        passed = !extras.stoppedEarly && !extras.easier && fraction >= Stages.PassFraction;
         var p = Get(id);
         if (p == null) return false;
         var prog = p.Progress(game);
         int percent = Mathf.RoundToInt(fraction * 100f);
         prog.sessions++;
-        prog.bestScore = Mathf.Max(prog.bestScore, score);
-        prog.bestPercent = Mathf.Max(prog.bestPercent, percent);
+        if (!extras.stoppedEarly)
+        {
+            prog.bestScore = Mathf.Max(prog.bestScore, score);
+            prog.bestPercent = Mathf.Max(prog.bestPercent, percent);
+        }
         bool unlocked = passed && stage >= prog.unlockedStage && prog.unlockedStage < Stages.Count;
         if (unlocked) prog.unlockedStage = stage + 1;
         p.lastVisit = System.DateTime.UtcNow.ToString("o");
@@ -214,6 +242,8 @@ public static class PatientStore
             percent = percent, passed = passed, bestAngle = bestAngle,
             durationSeconds = extras.durationSeconds, avgAngle = extras.avgAngle, safetyAlerts = extras.safetyAlerts,
             leg = extras.leg ?? p.operatedLeg, bestLeft = extras.bestLeft, bestRight = extras.bestRight,
+            stoppedEarly = extras.stoppedEarly, easier = extras.easier, planned = extras.planned, done = extras.done,
+            balancePauses = extras.balancePauses, settings = extras.settings,
         });
         Save();
         return unlocked;
@@ -232,6 +262,9 @@ public static class SessionConfig
     public static WaveGameManager.Movement Movement = WaveGameManager.Movement.Bend;
 
     public static PatientRecord Patient => Active ? PatientStore.Get(PatientId) : null;
+
+    /// <summary>Key for log files: the patient's id when launched from the menu, otherwise the typed name.</summary>
+    public static string LogId(string typedName) => Active ? PatientId : typedName;
 
     public static void Launch(PatientRecord patient, TrainingGame game, int stage, WaveGameManager.Movement movement)
     {

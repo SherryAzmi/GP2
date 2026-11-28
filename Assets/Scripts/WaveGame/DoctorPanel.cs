@@ -92,6 +92,8 @@ public class DoctorPanel : MonoBehaviour
     public void Show(string subtitle = null)
     {
         nameField.text = game.patientId;
+        // Started from the menu: the record is already chosen, so the name cannot be changed here.
+        nameField.interactable = !(SessionConfig.Active && SessionConfig.Game == TrainingGame.Beach);
         minField.text = game.minTargetAngle.ToString("0.#", CultureInfo.InvariantCulture);
         maxField.text = game.maxTargetAngle.ToString("0.#", CultureInfo.InvariantCulture);
         straightEasyField.text = game.straightenEasiestAngle.ToString("0.#", CultureInfo.InvariantCulture);

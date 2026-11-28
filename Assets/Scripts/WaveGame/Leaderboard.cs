@@ -7,6 +7,7 @@ using UnityEngine;
 public class LeaderboardEntry
 {
     public string patient;
+    public string patientId; // empty when the session was not started from the menu
     public int score;
     public int cleared, waves;
     public float bestAngle;

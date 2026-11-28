@@ -96,6 +96,7 @@ public class KickGameManager : MonoBehaviour
     AudioSource audioSource;
     AudioClip readyClip, kickClip, goalClip, missClip, alertClip, netClip, whistleClip, finalWhistleClip;
     KickLogger logger;
+    bool recordOpen;  // a session has started and is not yet in the patient's history
 
     float Angle => angleSource ? angleSource.CurrentKneeAngle : 0f;
     bool SensorLost => cameraSensor && cameraSensor.TrackingLost;
@@ -120,7 +121,11 @@ public class KickGameManager : MonoBehaviour
 
     void Update()
     {
-        if (RehabInput.MenuPressed) SessionConfig.ReturnToMenu();
+        if (RehabInput.MenuPressed)
+        {
+            SaveStoppedSession();
+            SessionConfig.ReturnToMenu();
+        }
         if (supportRail && supportRail.activeSelf != usesSupport) supportRail.SetActive(usesSupport);
 
         float angle = Angle;
@@ -156,6 +161,36 @@ public class KickGameManager : MonoBehaviour
 
     void OnDestroy() => logger?.Dispose();
 
+    void OnApplicationQuit() => SaveStoppedSession();
+
+    /// <summary>A session ended early (menu or quit) still goes into the history, marked as stopped.</summary>
+    void SaveStoppedSession()
+    {
+        if (!recordOpen || !SessionConfig.Active || SessionConfig.Game != TrainingGame.Football) return;
+        recordOpen = false;
+        var extras = SessionExtrasNow();
+        extras.stoppedEarly = true;
+        PatientStore.RecordSession(SessionConfig.PatientId, TrainingGame.Football, SessionConfig.Stage, score,
+                                   peakCount > 0 ? (float)goals / peakCount : 0f, sessionMaxAngle, extras, out _);
+    }
+
+    SessionExtras SessionExtrasNow() => new SessionExtras
+    {
+        durationSeconds = Time.time - sessionStartTime,
+        avgAngle = peakCount > 0 ? peakSum / peakCount : 0f,
+        safetyAlerts = safetyAlerts,
+        balancePauses = balancePauses,
+        leg = operatedLeg.ToString(),
+        bestLeft = operatedLeg == Leg.Left ? sessionMaxAngle : 0f,
+        bestRight = operatedLeg == Leg.Right ? sessionMaxAngle : 0f,
+        planned = kicksPerSession,
+        done = peakCount,
+        settings = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                                 "wind-up {0:0}-{1:0}% of {2:0} deg; hold {3:0.#} s; support {4}",
+                                 minWindUpPercent * 100f, maxWindUpPercent * 100f, comfortableMaxAngle,
+                                 windUpHoldSeconds, usesSupport ? "yes" : "no"),
+    };
+
     // ---------------- Session flow ----------------
 
     IEnumerator WaitForStartPress()
@@ -184,6 +219,7 @@ public class KickGameManager : MonoBehaviour
     {
         sessionRunning = true;
         sessionStartTime = Time.time;
+        recordOpen = true;
         peakSum = 0f;
         peakCount = 0;
         score = streak = bestStreak = goals = safetyAlerts = balancePauses = 0;
@@ -191,7 +227,7 @@ public class KickGameManager : MonoBehaviour
         sessionMaxAngle = Angle;
         windUpPercent = startWindUpPercent;
         startHeadXZ = head ? Flat(head.position) : Vector3.zero;
-        logger = new KickLogger(patientId, operatedLeg.ToString(), usesSupport);
+        logger = new KickLogger(SessionConfig.LogId(patientId), operatedLeg.ToString(), usesSupport);
         Debug.Log($"[KickGame] Logging session to {logger.FilePath}");
 
         for (int n = 3; n > 0; n--)
@@ -236,15 +272,8 @@ public class KickGameManager : MonoBehaviour
         if (SessionConfig.Active && SessionConfig.Game == TrainingGame.Football)
         {
             int played = SessionConfig.Stage;
-            var extras = new SessionExtras
-            {
-                durationSeconds = Time.time - sessionStartTime,
-                avgAngle = peakCount > 0 ? peakSum / peakCount : 0f,
-                safetyAlerts = safetyAlerts,
-                leg = operatedLeg.ToString(),
-                bestLeft = operatedLeg == Leg.Left ? sessionMaxAngle : 0f,
-                bestRight = operatedLeg == Leg.Right ? sessionMaxAngle : 0f,
-            };
+            var extras = SessionExtrasNow();
+            recordOpen = false;
             bool unlocked = PatientStore.RecordSession(SessionConfig.PatientId, TrainingGame.Football, played, score,
                                                        fraction, sessionMaxAngle, extras, out bool passed);
             fourthRow = (Stages.Name(played), passed ? "PASSED" : $"need {Stages.PassFraction * 100f:0}%", passed ? WaveHUD.Good : WaveHUD.Accent);

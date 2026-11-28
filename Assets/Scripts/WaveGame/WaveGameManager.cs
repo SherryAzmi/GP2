@@ -123,6 +123,7 @@ public class WaveGameManager : MonoBehaviour
     float sessionStartTime, peakSum;  // for the patient record: session length and average peak bend
     int peakCount;
     SessionLogger logger;
+    bool recordOpen;  // a session has started and is not yet in the patient's history
 
     VirtualLegPose OperatedLeg => operatedLeg == Leg.Left ? leftLeg : rightLeg;
     float Angle => angleSource ? angleSource.CurrentKneeAngle : 0f;
@@ -215,7 +216,11 @@ public class WaveGameManager : MonoBehaviour
 
     void Update()
     {
-        if (RehabInput.MenuPressed) SessionConfig.ReturnToMenu();
+        if (RehabInput.MenuPressed)
+        {
+            SaveStoppedSession();
+            SessionConfig.ReturnToMenu();
+        }
         if (!hud) return;
         float angle = Angle;
         hud.SetAngle(angle, currentTarget, safetyCeilingAngle, currentMovement == Movement.Straighten);
@@ -258,6 +263,67 @@ public class WaveGameManager : MonoBehaviour
     }
 
     void OnDestroy() => logger?.Dispose();
+
+    void OnApplicationQuit() => SaveStoppedSession();
+
+    /// <summary>A session ended early (menu or quit) still goes into the history, marked as stopped.</summary>
+    void SaveStoppedSession()
+    {
+        if (!recordOpen || !SessionConfig.Active || SessionConfig.Game != TrainingGame.Beach) return;
+        recordOpen = false;
+        var extras = SessionExtrasNow();
+        int done = 0, cleared_ = 0, alerts = 0, total = 0;
+        float best = 0f;
+        void Add(Leg leg, int waves, int ok, int warnings, int points, float bend)
+        {
+            done += waves; cleared_ += ok; alerts += warnings; total += points;
+            best = Mathf.Max(best, bend);
+            if (leg == Leg.Left) extras.bestLeft = Mathf.Max(extras.bestLeft, bend);
+            else extras.bestRight = Mathf.Max(extras.bestRight, bend);
+        }
+        foreach (var r in results) Add(r.leg, r.waves, r.cleared, r.safetyAlerts, r.score, r.bestAngle);
+        if (logger != null) Add(operatedLeg, wavesDone, cleared, safetyAlerts, score, sessionMaxAngle); // leg in progress
+        extras.stoppedEarly = true;
+        extras.done = done;
+        extras.safetyAlerts = alerts;
+        PatientStore.RecordSession(SessionConfig.PatientId, TrainingGame.Beach, SessionConfig.Stage, total,
+                                   done > 0 ? (float)cleared_ / done : 0f, best, extras, out _);
+    }
+
+    SessionExtras SessionExtrasNow()
+    {
+        var c = System.Globalization.CultureInfo.InvariantCulture;
+        return new SessionExtras
+        {
+            durationSeconds = Time.time - sessionStartTime,
+            avgAngle = peakCount > 0 ? peakSum / peakCount : 0f,
+            leg = legMode.ToString(),
+            planned = wavesPerSession * (legMode == LegMode.Both ? 2 : 1),
+            easier = IsEasierThanStage(),
+            settings = string.Format(c, "{0}; bend {1:0}-{2:0} deg; straighten {3:0}-{4:0} deg; hold {5:0.#}-{6:0.#} s",
+                                     movement, minTargetAngle, maxTargetAngle, straightenEasiestAngle,
+                                     straightenHardestAngle, startHoldSeconds, maxHoldSeconds),
+        };
+    }
+
+    /// <summary>True when the therapist lowered anything below the chosen stage, so it must not unlock the next one.</summary>
+    bool IsEasierThanStage()
+    {
+        var p = SessionConfig.Patient;
+        if (p == null) return false;
+        int s = SessionConfig.Stage;
+        float top = safetyCeilingAngle - 5f;
+        float stageMax = Mathf.Min(top, Stages.BeachBendMax(s, p.comfortableMaxAngle));
+        float stageMin = Mathf.Min(stageMax - 5f, Stages.BeachBendMin(s, p.comfortableMaxAngle));
+        const float slack = 0.5f; // the setup panel shows one decimal
+        bool bend = movement != Movement.Straighten &&
+                    (maxTargetAngle < stageMax - slack || minTargetAngle < stageMin - slack);
+        bool straighten = movement != Movement.Bend &&
+                          (straightenEasiestAngle > Stages.BeachStraightenEasiest(s) + slack ||
+                           straightenHardestAngle > Stages.BeachStraightenHardest(s) + slack);
+        return bend || straighten || wavesPerSession < Stages.BeachWaves(s) ||
+               startHoldSeconds < Stages.BeachStartHold(s) - 0.05f || maxHoldSeconds < Stages.BeachMaxHold(s) - 0.05f;
+    }
 
     // ---------------- Session flow ----------------
 
@@ -305,6 +371,7 @@ public class WaveGameManager : MonoBehaviour
         sessionStartTime = Time.time;
         peakSum = 0f;
         peakCount = 0;
+        recordOpen = true;
 
         for (int s = 0; s < stages.Length; s++)
         {
@@ -326,7 +393,7 @@ public class WaveGameManager : MonoBehaviour
         foreach (var r in results) { totalCleared += r.cleared; totalWaves += r.waves; best = Mathf.Max(best, r.bestAngle); }
         var entry = new LeaderboardEntry
         {
-            patient = patientId, score = TotalScore(), cleared = totalCleared, waves = totalWaves,
+            patient = patientId, patientId = SessionConfig.Active ? SessionConfig.PatientId : "", score = TotalScore(), cleared = totalCleared, waves = totalWaves,
             bestAngle = best, mode = legMode.ToString(), date = System.DateTime.UtcNow.ToString("o"),
         };
         var board = Leaderboard.Add(entry, out int rank);
@@ -341,19 +408,16 @@ public class WaveGameManager : MonoBehaviour
         int played = SessionConfig.Stage;
         if (SessionConfig.Active && SessionConfig.Game == TrainingGame.Beach)
         {
-            var extras = new SessionExtras
-            {
-                durationSeconds = Time.time - sessionStartTime,
-                avgAngle = peakCount > 0 ? peakSum / peakCount : 0f,
-                safetyAlerts = alerts,
-                leg = legMode.ToString(),
-            };
+            var extras = SessionExtrasNow();
+            extras.safetyAlerts = alerts;
+            extras.done = totalWaves;
+            recordOpen = false;
             foreach (var r in results)
                 if (r.leg == Leg.Left) extras.bestLeft = Mathf.Max(extras.bestLeft, r.bestAngle);
                 else extras.bestRight = Mathf.Max(extras.bestRight, r.bestAngle);
             unlocked = PatientStore.RecordSession(SessionConfig.PatientId, TrainingGame.Beach, played, TotalScore(),
                                                   fraction, best, extras, out bool passed);
-            stageRow = (Stages.Name(played), passed ? "PASSED" : $"need {Stages.PassFraction * 100f:0}%", passed ? WaveHUD.Good : WaveHUD.Accent);
+            stageRow = (Stages.Name(played), passed ? "PASSED" : extras.easier ? "easier settings" : $"need {Stages.PassFraction * 100f:0}%", passed ? WaveHUD.Good : WaveHUD.Accent);
             if (unlocked) SessionConfig.Stage = played + 1;
             prompt = $"A: PLAY STAGE {SessionConfig.Stage}   ·   ESC: MENU";
         }
@@ -437,7 +501,7 @@ public class WaveGameManager : MonoBehaviour
         sessionMaxAngle = sessionMinAngle = Angle;
         bendLevel = straightenLevel = startTargetLevel;
         holdSeconds = startHoldSeconds;
-        logger = new SessionLogger(patientId, operatedLeg.ToString());
+        logger = new SessionLogger(SessionConfig.LogId(patientId), operatedLeg.ToString());
         Debug.Log($"[WaveGame] Logging session to {logger.FilePath}");
 
         hud.SetScore(0, 0);
