@@ -286,6 +286,7 @@ public static class PatientStore
             hasExtension = extras.hasExtension, bestExtension = extras.bestExtension,
         });
         Save();
+        CloudSync.Push(p); // only when cloud.json exists
         return unlocked;
     }
 }

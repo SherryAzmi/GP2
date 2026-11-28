@@ -934,6 +934,7 @@ public class MainMenu : MonoBehaviour
             editing.pain = Mathf.Max(0, painChoice);
             editing.note = noteField.text.Trim();
             PatientStore.Save();
+            CloudSync.Push(selected);
             UISound.Confirm();
             RefreshLog();
         }, 26);

@@ -51,6 +51,8 @@ public class TherapistMonitor : MonoBehaviour
         nextSample = Time.unscaledTime + Seconds / W;
 
         var r = read();
+        if (!r.cameraLost && !SessionControls.Paused)
+            CloudSync.SendLive(r.angle, r.target, r.limit, r.progress);
         Array.Copy(history, 1, history, 0, W - 1);
         history[W - 1] = r.cameraLost || SessionControls.Paused ? -1f : r.angle;
 
