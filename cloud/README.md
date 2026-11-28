@@ -27,6 +27,15 @@ Create `cloud.json` next to `patients.json` (AppData/LocalLow/DefaultCompany/GP2
 
 Without this file Unity sends nothing.
 
+## Spray device
+Test without hardware: `node pretend-device.js http://127.0.0.1:8787 <DEVICE_KEY>`.
+Unity sends a splash only when the patient has WATER SPRAY ON (Edit profile; off by default).
+
+Rules for the real device: only on a fully healed wound with clinician approval; off at boot and on
+disconnect; maximum spray time and gap enforced on the device; ignore old messages; a physical off switch;
+low voltage, electronics sealed away from the water; watch for a wet floor. Needs a clock (NTP) to judge
+message age. Have someone who knows electronics check it before it goes near a person.
+
 ## Endpoints
 | Request | Who | Use |
 |---|---|---|

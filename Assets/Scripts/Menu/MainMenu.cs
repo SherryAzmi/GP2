@@ -509,6 +509,7 @@ public class MainMenu : MonoBehaviour
 
         formNote = Lbl(page, "", new Vector2(0, -310f), new Vector2(CW, 34f), 24, WaveHUD.Bad, true);
         Button(page, "CANCEL", new Vector2(-200f, -380f), new Vector2(240f, 70f), Off, Color.white, () => Show(formIsNew ? Page.Patients : Page.PatientFile), 26);
+        sprayButton = Button(page, "", new Vector2(-560f, -380f), new Vector2(340f, 70f), Off, Color.white, () => SetSpray(!sprayChoice), 20);
         deleteButton = Button(page, "DELETE PATIENT", new Vector2(600f, -380f), new Vector2(260f, 70f), Off, Color.white, DeletePatient, 22);
         formSave = Button(page, "CREATE PATIENT", new Vector2(110f, -380f), new Vector2(340f, 70f), Green, Color.white, SubmitForm, 28).GetComponentInChildren<Text>();
     }
@@ -542,6 +543,7 @@ public class MainMenu : MonoBehaviour
         fLimit.text = (p != null ? p.SafetyLimit : PatientRecord.DefaultSafetyLimit).ToString("0", CultureInfo.InvariantCulture);
         fGoal.text = (p != null ? p.extensionGoal : 0f).ToString("0", CultureInfo.InvariantCulture);
         deleteArmed = false;
+        SetSpray(p != null && p.sprayAllowed);
         deleteButton.gameObject.SetActive(!isNew);
         SetLeg(p != null ? p.operatedLeg : "Right");
         Show(Page.Form);
@@ -550,6 +552,15 @@ public class MainMenu : MonoBehaviour
     }
 
     InputField fLimit, fGoal;
+    Image sprayButton;
+    bool sprayChoice;
+
+    void SetSpray(bool value)
+    {
+        sprayChoice = value;
+        sprayButton.color = value ? Blue : Off;
+        sprayButton.GetComponentInChildren<Text>().text = value ? "WATER SPRAY: ON (wound healed)" : "WATER SPRAY: OFF";
+    }
     Image deleteButton;
     bool deleteArmed;
 
@@ -606,6 +617,7 @@ public class MainMenu : MonoBehaviour
         p.comfortableMaxAngle = max;
         p.safetyLimit = limit;
         p.extensionGoal = goal;
+        p.sprayAllowed = sprayChoice;
         p.notes = fNotes.text.Trim();
         p.operatedLeg = legChoice;
         PatientStore.Save();

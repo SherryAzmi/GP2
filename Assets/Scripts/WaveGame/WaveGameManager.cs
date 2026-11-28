@@ -662,6 +662,8 @@ public class WaveGameManager : MonoBehaviour
             peakCount++;
         }
         bool waveCleared = fraction >= clearFraction;
+        // Splashed: spray the leg, only for a patient the therapist switched on (needs cloud.json).
+        if (!waveCleared && SessionConfig.Patient?.sprayAllowed == true) CloudSync.SendSplash(1000);
         wavesDone++;
         heldSum += fraction;
         if (straighten) straightenWaves++; else bendWaves++;

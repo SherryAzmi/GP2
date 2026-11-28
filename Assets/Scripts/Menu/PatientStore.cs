@@ -71,6 +71,7 @@ public class PatientRecord
     public string notes = "";
     public float safetyLimit;    // 0 = not set, use the default
     public float extensionGoal;  // straightest angle to ask for; 0 = fully straight
+    public bool sprayAllowed;    // water spray on a beach splash; off until a clinician allows it (healed wound)
 
     public const float DefaultSafetyLimit = 110f;
     public float SafetyLimit => safetyLimit > 0f ? Mathf.Clamp(safetyLimit, 40f, DefaultSafetyLimit) : DefaultSafetyLimit;
