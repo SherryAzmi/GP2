@@ -124,6 +124,7 @@ public class WaveGameManager : MonoBehaviour
     int peakCount;
     SessionLogger logger;
     bool recordOpen;  // a session has started and is not yet in the patient's history
+    SessionControls controls;
 
     VirtualLegPose OperatedLeg => operatedLeg == Leg.Left ? leftLeg : rightLeg;
     float Angle => angleSource ? angleSource.CurrentKneeAngle : 0f;
@@ -266,6 +267,16 @@ public class WaveGameManager : MonoBehaviour
 
     void OnApplicationQuit() => SaveStoppedSession();
 
+    /// <summary>Therapist's STOP button: keep what was done, then go back to the menu (or restart the scene).</summary>
+    public void StopSession()
+    {
+        SaveStoppedSession();
+        logger?.Dispose();
+        logger = null;
+        if (Application.CanStreamedLevelBeLoaded(SessionConfig.MenuScene)) SessionConfig.ReturnToMenu();
+        else UnityEngine.SceneManagement.SceneManager.LoadScene(gameObject.scene.name);
+    }
+
     /// <summary>A session ended early (menu or quit) still goes into the history, marked as stopped.</summary>
     void SaveStoppedSession()
     {
@@ -372,6 +383,8 @@ public class WaveGameManager : MonoBehaviour
         peakSum = 0f;
         peakCount = 0;
         recordOpen = true;
+        if (!controls) controls = SessionControls.Create(transform, StopSession);
+        controls.SetVisible(true);
 
         for (int s = 0; s < stages.Length; s++)
         {
@@ -422,6 +435,7 @@ public class WaveGameManager : MonoBehaviour
             prompt = $"A: PLAY STAGE {SessionConfig.Stage}   ·   ESC: MENU";
         }
 
+        controls.SetVisible(false);
         hud.Popup("SESSION DONE!", $"{totalCleared} / {totalWaves} waves cleared", WaveHUD.Accent, 2.2f);
         yield return new WaitForSeconds(2.5f);
         if (unlocked)
