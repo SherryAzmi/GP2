@@ -829,7 +829,7 @@ public class MainMenu : MonoBehaviour
     void BuildLog(RectTransform page)
     {
         var title = Box("LogTitle", page, new Vector2(0, CH / 2f - 40f), new Vector2(CW, 80f), HeaderCol, 0.8f).transform;
-        logTitle = Lbl(title, "", Vector2.zero, new Vector2(CW - 60f, 60f), 34, Color.white, true);
+        logTitle = Lbl(title, "", new Vector2(-240f, 0f), new Vector2(CW - 540f, 70f), 28, Color.white, true, TextAnchor.MiddleLeft);
         Button(title, "REPORT", new Vector2(CW / 2f - 370f, 0f), new Vector2(220f, 56f), Blue, Color.white, PrintReport, 22);
         Button(title, "EXPORT CSV", new Vector2(CW / 2f - 130f, 0f), new Vector2(220f, 56f), Green, Color.white, ExportSessions, 22);
         var sec = SectionBox(page, "EVERY SESSION  ·  click a row for pain and notes  ·  newest first", new Vector2(0, -50f), new Vector2(CW, 780f));
@@ -953,6 +953,7 @@ public class MainMenu : MonoBehaviour
         painChoice = e.hasPain ? e.pain : -1;
         PaintPain();
         noteField.text = e.note ?? "";
+        DrawAngles(e);
         editorInfo.text = $"{DateTimeText(e.date)}  ·  {GameName(e.game)}  ·  stage {e.stage}\n{e.settings}";
         sessionEditor.gameObject.SetActive(true);
         sessionEditor.SetAsLastSibling();
@@ -963,6 +964,70 @@ public class MainMenu : MonoBehaviour
         if (sessionEditor) sessionEditor.gameObject.SetActive(false);
     }
 
+    RawImage angleGraph;
+    Text graphInfo;
+    Texture2D angleTexture;
+
+    /// <summary>The whole session's knee angle (blue) and target (yellow), 0 to 140 degrees.</summary>
+    void DrawAngles(SessionEntry e)
+    {
+        const int W = 1000, H = 200;
+        if (!angleTexture) angleTexture = new Texture2D(W, H, TextureFormat.RGBA32, false);
+        var pixels = new Color32[W * H];
+        var back = new Color32(2, 15, 31, 255);
+        for (int i = 0; i < pixels.Length; i++) pixels[i] = back;
+        for (int d = 0; d <= 120; d += 30) // grid every 30 degrees
+        {
+            int y = Mathf.RoundToInt(d / 140f * (H - 1));
+            for (int x = 0; x < W; x += 3) pixels[y * W + x] = new Color32(70, 90, 115, 255);
+        }
+
+        var rows = new List<string[]>();
+        try
+        {
+            if (!string.IsNullOrEmpty(e.angleFile))
+            {
+                string file = System.IO.Path.Combine(Application.persistentDataPath, "Sessions", e.angleFile);
+                if (System.IO.File.Exists(file))
+                    foreach (var line in System.IO.File.ReadAllLines(file)) rows.Add(line.Split(','));
+            }
+        }
+        catch (System.IO.IOException ex) { Debug.LogWarning("[Angles] " + ex.Message); }
+
+        bool camera = false;
+        float low = float.MaxValue, high = float.MinValue;
+        int count = rows.Count - 1;
+        for (int i = 0; i < count; i++)
+        {
+            var r = rows[i + 1];
+            if (r.Length < 4) continue;
+            int x = count <= 1 ? 0 : Mathf.RoundToInt((float)i / (count - 1) * (W - 1));
+            camera |= r[3] == "1";
+            if (r[2].Length > 0) Dot(pixels, W, H, x, ParseF(r[2]), new Color32(255, 217, 64, 255));
+            if (r[1].Length == 0) continue;
+            float angle = ParseF(r[1]);
+            low = Mathf.Min(low, angle);
+            high = Mathf.Max(high, angle);
+            Dot(pixels, W, H, x, angle, new Color32(90, 210, 255, 255));
+        }
+        angleTexture.SetPixels32(pixels);
+        angleTexture.Apply(false);
+        angleGraph.texture = angleTexture;
+        graphInfo.text = high < low ? "No angle recording for this session."
+            : $"knee angle {low:0}° to {high:0}°  ·  {Duration(ParseF(rows[rows.Count - 1][0]))}  ·  lines every 30°  ·  yellow = target" +
+              (camera ? "" : "  ·  SIMULATOR, not the camera");
+    }
+
+    static void Dot(Color32[] pixels, int w, int h, int x, float degrees, Color32 colour)
+    {
+        int y = Mathf.Clamp(Mathf.RoundToInt(degrees / 140f * (h - 1)), 0, h - 2);
+        for (int dx = 0; dx < 2 && x + dx < w; dx++)
+        {
+            pixels[y * w + x + dx] = colour;
+            pixels[(y + 1) * w + x + dx] = colour;
+        }
+    }
+
     void PaintPain()
     {
         for (int i = 0; i < painButtons.Length; i++) Paint(painButtons[i], i == painChoice);
@@ -970,18 +1035,24 @@ public class MainMenu : MonoBehaviour
 
     void BuildSessionEditor()
     {
-        sessionEditor = SectionBox(pages[Page.Log], "SESSION  ·  pain and note", new Vector2(0, -40f), new Vector2(1100f, 480f));
+        sessionEditor = SectionBox(pages[Page.Log], "SESSION  ·  knee angle, pain and note", new Vector2(0, -40f), new Vector2(1100f, 720f));
         sessionEditor.GetComponent<Image>().color = CardCol;
         sessionEditor.GetComponent<Image>().raycastTarget = true; // block the table behind
-        editorInfo = Lbl(sessionEditor, "", new Vector2(0, 135f), new Vector2(1040f, 90f), 22, Color.white);
-        Lbl(sessionEditor, "Pain (0 = none, 10 = worst)", new Vector2(0, 65f), new Vector2(600f, 30f), 22, Gold);
+        editorInfo = Lbl(sessionEditor, "", new Vector2(0, 270f), new Vector2(1040f, 80f), 22, Color.white);
+        var graph = new GameObject("AngleGraph", typeof(RectTransform), typeof(RawImage)).GetComponent<RawImage>();
+        graph.transform.SetParent(sessionEditor, false);
+        graph.rectTransform.anchoredPosition = new Vector2(0, 115f);
+        graph.rectTransform.sizeDelta = new Vector2(1000f, 200f);
+        angleGraph = graph;
+        graphInfo = Lbl(sessionEditor, "", new Vector2(0, -2f), new Vector2(1000f, 26f), 18, Muted);
+        Lbl(sessionEditor, "Pain (0 = none, 10 = worst)", new Vector2(0, -45f), new Vector2(600f, 30f), 22, Gold);
         for (int i = 0; i <= 10; i++)
         {
             int value = i;
-            painButtons[i] = Toggle(sessionEditor, i.ToString(), new Vector2(-440f + i * 88f, 15f), 78f, () => { painChoice = value; PaintPain(); });
+            painButtons[i] = Toggle(sessionEditor, i.ToString(), new Vector2(-440f + i * 88f, -95f), 78f, () => { painChoice = value; PaintPain(); });
         }
-        noteField = Field(sessionEditor, new Vector2(0, -65f), 1000f, "Therapist's note", InputField.ContentType.Standard);
-        Button(sessionEditor, "SAVE", new Vector2(300f, -170f), new Vector2(240f, 66f), Green, Color.white, () =>
+        noteField = Field(sessionEditor, new Vector2(0, -180f), 1000f, "Therapist's note", InputField.ContentType.Standard);
+        Button(sessionEditor, "SAVE", new Vector2(300f, -285f), new Vector2(240f, 66f), Green, Color.white, () =>
         {
             editing.hasPain = painChoice >= 0;
             editing.pain = Mathf.Max(0, painChoice);
@@ -991,8 +1062,8 @@ public class MainMenu : MonoBehaviour
             UISound.Confirm();
             RefreshLog();
         }, 26);
-        Button(sessionEditor, "CLOSE", new Vector2(0f, -170f), new Vector2(240f, 66f), Off, Color.white, CloseSession, 26);
-        Button(sessionEditor, "DELETE (click twice)", new Vector2(-320f, -170f), new Vector2(280f, 66f), Off, Color.white, () =>
+        Button(sessionEditor, "CLOSE", new Vector2(0f, -285f), new Vector2(240f, 66f), Off, Color.white, CloseSession, 26);
+        Button(sessionEditor, "DELETE (click twice)", new Vector2(-320f, -285f), new Vector2(280f, 66f), Off, Color.white, () =>
         {
             if (!removeArmed) { removeArmed = true; editorInfo.text = "Click DELETE again to remove this session."; return; }
             selected.RemoveSession(editing);

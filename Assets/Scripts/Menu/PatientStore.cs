@@ -34,6 +34,7 @@ public class SessionEntry
     public bool hasPain;
     public int pain;            // 0..10, entered by the therapist
     public string note;
+    public string angleFile;     // full knee-angle recording, in Sessions/
 }
 
 /// <summary>Extra numbers a game reports when a session ends.</summary>
@@ -285,6 +286,7 @@ public static class PatientStore
             stoppedEarly = extras.stoppedEarly, easier = extras.easier, planned = extras.planned, done = extras.done,
             balancePauses = extras.balancePauses, settings = extras.settings,
             hasExtension = extras.hasExtension, bestExtension = extras.bestExtension,
+            angleFile = TherapistMonitor.CurrentFile,
         });
         Save();
         CloudSync.Push(p); // only when cloud.json exists

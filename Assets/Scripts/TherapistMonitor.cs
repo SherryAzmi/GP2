@@ -27,6 +27,40 @@ public class TherapistMonitor : MonoBehaviour
     readonly float[] history = new float[W];
     Text angleText, targetText, infoText;
     float nextSample;
+    System.IO.StreamWriter log;
+    float logStart;
+
+    /// <summary>Knee-angle recording of the latest session, file name inside Sessions/.</summary>
+    public static string CurrentFile { get; private set; }
+
+    // Every sample of the knee angle goes to a file: this is the data the physiotherapist asks for.
+    void OpenLog()
+    {
+        CloseLog();
+        string id = SessionConfig.Active ? SessionConfig.PatientId : "unknown";
+        CurrentFile = $"angles_{id}_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+        string folder = System.IO.Path.Combine(Application.persistentDataPath, "Sessions");
+        System.IO.Directory.CreateDirectory(folder);
+        log = new System.IO.StreamWriter(System.IO.Path.Combine(folder, CurrentFile)) { AutoFlush = true };
+        log.WriteLine("seconds,angle_deg,target_deg,from_camera,progress");
+        logStart = Time.time;
+    }
+
+    void CloseLog()
+    {
+        log?.Dispose();
+        log = null;
+    }
+
+    void Record(LiveReading r)
+    {
+        if (log == null || SessionControls.Paused) return;
+        var c = System.Globalization.CultureInfo.InvariantCulture;
+        // An empty angle means the camera could not see the leg: never record a held value as measured.
+        log.WriteLine(string.Join(",", (Time.time - logStart).ToString("0.00", c),
+            r.cameraLost ? "" : r.angle.ToString("0.0", c), r.target >= 0f ? r.target.ToString("0.0", c) : "",
+            r.cameraConnected ? "1" : "0", r.progress.Replace(',', ' ').Replace("  ·  ", " / ")));
+    }
 
     public static TherapistMonitor Create(Transform owner, Func<LiveReading> read)
     {
@@ -41,7 +75,11 @@ public class TherapistMonitor : MonoBehaviour
     public void SetVisible(bool visible)
     {
         if (visible && !root.activeSelf)
+        {
             for (int i = 0; i < W; i++) history[i] = -1f;
+            OpenLog();
+        }
+        else if (!visible) CloseLog();
         root.SetActive(visible);
     }
 
@@ -51,6 +89,7 @@ public class TherapistMonitor : MonoBehaviour
         nextSample = Time.unscaledTime + Seconds / W;
 
         var r = read();
+        Record(r);
         if (!r.cameraLost && !SessionControls.Paused)
             CloudSync.SendLive(r.angle, r.target, r.limit, r.progress);
         Array.Copy(history, 1, history, 0, W - 1);
@@ -96,6 +135,7 @@ public class TherapistMonitor : MonoBehaviour
 
     void OnDestroy()
     {
+        CloseLog();
         if (graph) Destroy(graph);
     }
 
