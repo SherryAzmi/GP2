@@ -1,16 +1,20 @@
 using System.Collections;
+using Meta.XR.MRUtilityKit;
 using UnityEngine;
 
 /// <summary>
 /// AR check-up: the doctor wears the headset, sees the real room (passthrough) with the patient's live knee angle,
-/// a graph and a bone overlay that bends with the knee. No game. Hold the right trigger to move the overlay onto the
-/// patient's knee (placed by hand: the webcam does not tell the headset where the leg is).
+/// a graph and a bone overlay that bends with the knee. No game. A printed QR code with the text KNEE, held or laid
+/// beside the knee, places the overlay (image anchor, where the headset supports QR tracking); otherwise hold the
+/// right trigger to move it by hand. The webcam does not tell the headset where the leg is.
 /// End with Esc, the left menu button or STOP &amp; SAVE on the PC. The angle curve is saved to the patient.
 /// Builds itself; the scene only needs the camera rig (with passthrough) and this component.
 /// </summary>
 public class CheckUpSession : MonoBehaviour
 {
     public const string SceneName = "CheckUp";
+    public const string MarkerText = "KNEE";
+    Transform marker;
     const float Thigh = 0.42f, Shin = 0.45f;
 
     JointAngleCalculator angle;
@@ -35,6 +39,7 @@ public class CheckUpSession : MonoBehaviour
             limit = p.SafetyLimit;
             sensor.useLeftLeg = p.IsLeftLeg;
         }
+        StartMarkerTracking();
         var rig = FindFirstObjectByType<OVRCameraRig>();
         if (rig) rightHand = rig.rightHandAnchor;
         audioSource = gameObject.AddComponent<AudioSource>();
@@ -65,7 +70,9 @@ public class CheckUpSession : MonoBehaviour
         if (RehabInput.MenuPressed) { End(); return; }
         float a = Angle;
         shin.localRotation = Quaternion.AngleAxis(a, Vector3.right); // 0 = straight, 90 = heel straight down
-        if (rightHand && OVRInput.Get(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch))
+        if (marker && marker.gameObject.activeInHierarchy) // the marker's position, kept upright
+            overlay.SetPositionAndRotation(marker.position, Quaternion.Euler(0f, marker.eulerAngles.y, 0f));
+        else if (rightHand && OVRInput.Get(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch))
             overlay.SetPositionAndRotation(rightHand.position, Quaternion.Euler(0f, rightHand.eulerAngles.y, 0f));
 
         if (!monitor || sensor.TrackingLost || SessionControls.Paused) return;
@@ -94,6 +101,36 @@ public class CheckUpSession : MonoBehaviour
         saved = true;
         if (highest > float.MinValue)
             PatientStore.RecordCheckUp(SessionConfig.PatientId, Time.time - started, highest, lowest, alerts, sensor.Connected);
+    }
+
+    // Image anchor: follow a QR code whose text is KNEE. Silently does nothing where QR tracking is not supported.
+    void StartMarkerTracking()
+    {
+        try
+        {
+            var mruk = MRUK.Instance;
+            if (!mruk)
+            {
+                var go = new GameObject("MarkerTracking");
+                go.SetActive(false);
+                go.transform.SetParent(transform, false);
+                mruk = go.AddComponent<MRUK>();
+                mruk.SceneSettings = new MRUK.MRUKSettings { LoadSceneOnStartup = false };
+                mruk.EnableWorldLock = false; // no room model is used: never move the camera rig
+                go.SetActive(true);
+            }
+            var config = mruk.SceneSettings.TrackerConfiguration;
+            config.QRCodeTrackingEnabled = true;
+            mruk.SceneSettings.TrackerConfiguration = config;
+            mruk.SceneSettings.TrackableAdded.AddListener(found =>
+            {
+                if (found.MarkerPayloadString == MarkerText) marker = found.transform;
+            });
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning("[CheckUp] Marker tracking unavailable: " + e.Message);
+        }
     }
 
     // The same sensor chain as the games: simulator (keyboard S / W) until the camera sends readings.

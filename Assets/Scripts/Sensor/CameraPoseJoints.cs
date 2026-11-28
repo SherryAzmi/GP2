@@ -43,6 +43,7 @@ public class CameraPoseJoints : MonoBehaviour
     }
 
     UdpClient client;
+    IPEndPoint relay; // a second headset on the same network that also receives the angles
     Thread thread;
     volatile bool running;
     readonly object latestLock = new object();
@@ -64,7 +65,10 @@ public class CameraPoseJoints : MonoBehaviour
     {
         try
         {
-            client = new UdpClient(new IPEndPoint(IPAddress.Loopback, port));
+            // On the PC only this computer may send. A standalone headset has to listen on the network.
+            bool headset = Application.platform == RuntimePlatform.Android;
+            client = new UdpClient(new IPEndPoint(headset ? IPAddress.Any : IPAddress.Loopback, port));
+            ReadRelay();
         }
         catch (SocketException e)
         {
@@ -74,6 +78,16 @@ public class CameraPoseJoints : MonoBehaviour
         running = true;
         thread = new Thread(Receive) { IsBackground = true };
         thread.Start();
+    }
+
+    // persistentDataPath/second-headset.txt holds the second headset's IP address; no file, nothing is sent out.
+    void ReadRelay()
+    {
+        relay = null;
+        string file = System.IO.Path.Combine(Application.persistentDataPath, "second-headset.txt");
+        if (!System.IO.File.Exists(file)) return;
+        if (IPAddress.TryParse(System.IO.File.ReadAllText(file).Trim(), out var address) && !IPAddress.IsLoopback(address)) relay = new IPEndPoint(address, port);
+        else Debug.LogWarning($"[CameraSensor] {file} does not hold an IP address");
     }
 
     void OnDisable()
@@ -91,7 +105,14 @@ public class CameraPoseJoints : MonoBehaviour
         {
             try
             {
-                string text = Encoding.UTF8.GetString(client.Receive(ref from));
+                byte[] data = client.Receive(ref from);
+                // Only angles from this PC are passed on (the packet holds two numbers, no patient details).
+                if (relay != null && IPAddress.IsLoopback(from.Address))
+                {
+                    using var sender = new UdpClient();
+                    sender.Send(data, data.Length, relay);
+                }
+                string text = Encoding.UTF8.GetString(data);
                 lock (latestLock) latest = text;
             }
             catch (SocketException) { if (!running) return; }
