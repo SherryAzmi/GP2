@@ -82,6 +82,14 @@ public class MainMenu : MonoBehaviour
 
     // ================= Navigation =================
 
+    RectTransform checkUpBox;
+
+    void Choose(bool doctor)
+    {
+        SessionConfig.DoctorWearsHeadset = doctor;
+        AskPin();
+    }
+
     // ---------------- Optional PIN ----------------
     // Keeps patients and visitors out of the dashboard. It does not encrypt the files on this PC.
     const string PinKey = "GP2.Pin";
@@ -245,10 +253,14 @@ public class MainMenu : MonoBehaviour
         Lbl(games, "PENALTY PRACTICE", new Vector2(230f, -5f), new Vector2(420f, 44f), 34, PitchLine, true);
         Lbl(games, "Standing  ·  wind up and kick", new Vector2(230f, -42f), new Vector2(420f, 30f), 21, Muted);
 
-        var start = Button(card, "START", new Vector2(0, -150f), new Vector2(520f, 120f), Green, Color.white, AskPin, 64);
-        start.gameObject.AddComponent<Pulse>();
+        // The first choice of every run: who puts on the headset (only one is connected to this PC).
+        Lbl(card, "WHO WILL WEAR THE HEADSET?", new Vector2(0, -75f), new Vector2(900f, 40f), 30, Gold, true);
+        Button(card, "PATIENT", new Vector2(-250f, -165f), new Vector2(460f, 110f), Green, Color.white, () => Choose(false), 48);
+        Button(card, "DOCTOR", new Vector2(250f, -165f), new Vector2(460f, 110f), Blue, Color.white, () => Choose(true), 48);
+        Lbl(card, "training games", new Vector2(-250f, -240f), new Vector2(460f, 30f), 20, Muted);
+        Lbl(card, "AR check-up of the knee", new Vector2(250f, -240f), new Vector2(460f, 30f), 20, Muted);
         Lbl(card, System.DateTime.Now.ToString("dddd d MMMM yyyy", CultureInfo.InvariantCulture) + "   ·   use the mouse",
-             new Vector2(0, -290f), new Vector2(1000f, 34f), 22, Muted);
+             new Vector2(0, -305f), new Vector2(1000f, 34f), 22, Muted);
     }
 
     void BuildDashboard()
@@ -769,6 +781,25 @@ public class MainMenu : MonoBehaviour
         startTitle.text = $"START SESSION  ·  {selected.name}  ·  {selected.operatedLeg} knee  ·  comfortable max {selected.comfortableMaxAngle:0}°";
         RefreshCard(beachCard);
         RefreshCard(footballCard);
+
+        if (!checkUpBox)
+        {
+            var page = pages[Page.Start];
+            checkUpBox = SectionBox(page, "THE DOCTOR WEARS THE HEADSET", new Vector2(0, -45f), new Vector2(CW, 760f));
+            checkUpBox.GetComponent<Image>().color = CardCol;
+            checkUpBox.GetComponent<Image>().raycastTarget = true;
+            Lbl(checkUpBox, "AR check-up: you see the real room with the patient's live knee angle, a graph and a bone overlay.\n" +
+                "Hold the right trigger to move the overlay onto the knee. The patient moves the leg; there is no game.\n" +
+                "End with STOP & SAVE or Esc. To play the games, press EXIT and choose PATIENT.",
+                new Vector2(0, 130f), new Vector2(CW - 100f, 150f), 26, Color.white);
+            Button(checkUpBox, "START  AR CHECK-UP", new Vector2(0, -80f), new Vector2(560f, 100f), Green, Color.white, () =>
+            {
+                UISound.Confirm();
+                SessionConfig.LaunchCheckUp(selected);
+            }, 36);
+        }
+        checkUpBox.gameObject.SetActive(SessionConfig.DoctorWearsHeadset);
+        checkUpBox.SetAsLastSibling();
     }
 
     void RefreshCard(Card c)
@@ -846,8 +877,8 @@ public class MainMenu : MonoBehaviour
         {
             labels.Add(ShortDate(e.date));
             bool b = e.game == "Beach";
-            beachA.Add(b ? e.bestAngle : -1f); footA.Add(b ? -1f : e.bestAngle);
-            beachS.Add(b ? e.score : -1f); footS.Add(b ? -1f : e.score);
+            beachA.Add(b ? e.bestAngle : -1f); footA.Add(e.game == "Football" ? e.bestAngle : -1f);
+            beachS.Add(b ? e.score : -1f); footS.Add(e.game == "Football" ? e.score : -1f);
             float l = e.bestLeft, r = e.bestRight;
             if (l <= 0f && r <= 0f) { string leg = string.IsNullOrEmpty(e.leg) ? selected.operatedLeg : e.leg; if (leg == "Left") l = e.bestAngle; else if (leg == "Right") r = e.bestAngle; } // older records
             left.Add(l > 0f ? l : -1f); right.Add(r > 0f ? r : -1f);
@@ -1346,9 +1377,10 @@ public class MainMenu : MonoBehaviour
 
     static string Empty(string s, string fallback = "-") => string.IsNullOrWhiteSpace(s) ? fallback : s;
     static string Short(string s, int max) => s.Length <= max ? s : s.Substring(0, max - 1) + ".";
-    static string GameName(string g) => g == "Beach" ? "Beach waves" : g == "Football" ? "Penalty practice" : g;
+    static string GameName(string g) => g == "Beach" ? "Beach waves" : g == "Football" ? "Penalty practice" : g == "CheckUp" ? "AR check-up" : g;
 
     static string SuccessText(SessionEntry e) =>
+        e.game == "CheckUp" ? "check-up" :
         e.stoppedEarly ? $"<color=#FF7A66>stopped {e.done}/{e.planned}</color>" :
         e.easier ? $"<color=#FFD94A>{e.percent}%</color>  eased" :
         e.passed ? $"<color=#5BE584>{e.percent}%  passed</color>" : $"<color=#FFD94A>{e.percent}%</color>  practice";

@@ -27,6 +27,7 @@ public class TherapistMonitor : MonoBehaviour
     readonly float[] history = new float[W];
     Text angleText, targetText, infoText;
     float nextSample;
+    bool inWorld; // floating in front of the headset wearer instead of on the PC monitor
     System.IO.StreamWriter log;
     float logStart;
 
@@ -62,12 +63,13 @@ public class TherapistMonitor : MonoBehaviour
             r.cameraConnected ? "1" : "0", r.progress.Replace(',', ' ').Replace("  ·  ", " / ")));
     }
 
-    public static TherapistMonitor Create(Transform owner, Func<LiveReading> read)
+    public static TherapistMonitor Create(Transform owner, Func<LiveReading> read, bool inWorld = false)
     {
         var go = new GameObject("TherapistMonitor");
         go.transform.SetParent(owner, false);
         var monitor = go.AddComponent<TherapistMonitor>();
         monitor.read = read;
+        monitor.inWorld = inWorld;
         monitor.Build();
         return monitor;
     }
@@ -81,6 +83,7 @@ public class TherapistMonitor : MonoBehaviour
         }
         else if (!visible) CloseLog();
         root.SetActive(visible);
+        if (visible && inWorld) DoctorPanel.PlaceInFront(root, 1.3f);
     }
 
     void Update()
@@ -143,11 +146,16 @@ public class TherapistMonitor : MonoBehaviour
     {
         root = new GameObject("Root", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
         root.transform.SetParent(transform, false);
-        DoctorPanel.ConfigureCanvas(root, false, 89);
+        DoctorPanel.ConfigureCanvas(root, inWorld, 89);
         var card = DoctorPanel.Child("Card", (RectTransform)root.transform, new Color(0.02f, 0.13f, 0.24f, 0.95f));
         card.anchorMin = card.anchorMax = card.pivot = Vector2.zero;
         card.anchoredPosition = new Vector2(20f, 20f);
         card.sizeDelta = new Vector2(440f, 340f);
+        if (inWorld) // to the left of the centre, so the patient's leg stays visible
+        {
+            card.anchorMin = card.anchorMax = card.pivot = new Vector2(0.5f, 0.5f);
+            card.anchoredPosition = new Vector2(-480f, 120f);
+        }
 
         DoctorPanel.Label(card, "PHYSIOTHERAPIST VIEW", new Vector2(0, 148f), new Vector2(400f, 26f), 20, TextAnchor.MiddleLeft, WaveHUD.Accent);
         angleText = DoctorPanel.Label(card, "", new Vector2(0, 110f), new Vector2(400f, 52f), 46, TextAnchor.MiddleLeft, Color.white);

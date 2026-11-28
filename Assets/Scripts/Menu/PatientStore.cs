@@ -219,6 +219,22 @@ public static class PatientStore
 
     public static PatientRecord Get(string id) => Data.patients.Find(p => p.id == id);
 
+    /// <summary>An AR check-up goes into the history without score or stage.</summary>
+    public static void RecordCheckUp(string id, float seconds, float bestBend, float straightest, int alerts, bool fromCamera)
+    {
+        var p = Get(id);
+        if (p == null) return;
+        p.lastVisit = System.DateTime.UtcNow.ToString("o");
+        p.history.Add(new SessionEntry
+        {
+            date = p.lastVisit, game = "CheckUp", durationSeconds = seconds, bestAngle = bestBend,
+            hasExtension = true, bestExtension = straightest, safetyAlerts = alerts, leg = p.operatedLeg,
+            angleFile = TherapistMonitor.CurrentFile, settings = fromCamera ? "AR check-up" : "AR check-up (simulator)",
+        });
+        Save();
+        CloudSync.Push(p);
+    }
+
     public static void Delete(PatientRecord p)
     {
         if (!Data.patients.Remove(p)) return;
@@ -322,6 +338,15 @@ public static class SessionConfig
 
     public static bool Active;
     public static string PatientId;
+    /// <summary>With one headset: true when the doctor wears it (AR check-up instead of the games).</summary>
+    public static bool DoctorWearsHeadset;
+
+    public static void LaunchCheckUp(PatientRecord patient)
+    {
+        Active = true;
+        PatientId = patient.id;
+        SceneManager.LoadScene(CheckUpSession.SceneName);
+    }
     public static TrainingGame Game;
     public static int Stage = 1;
     public static WaveGameManager.Movement Movement = WaveGameManager.Movement.Bend;
